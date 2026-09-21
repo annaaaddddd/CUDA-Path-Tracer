@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
+#include <thrust/partition.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -16,6 +17,9 @@
 #include "interactions.h"
 
 #define ERRORCHECK 1
+
+// Toggle stream compaction of terminated paths (for performance comparison)
+#define STREAM_COMPACTION 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -339,6 +343,15 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
     }
 }
 
+struct is_path_alive
+{
+    __host__ __device__
+        bool operator()(const PathSegment& p)
+    {
+        return p.remainingBounces > 0;
+    }
+};
+
 /**
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
@@ -435,7 +448,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials
         );
-        iterationComplete = depth == traceDepth ; // TODO: should be based off stream compaction results.
+
+        #if STREAM_COMPACTION
+                PathSegment* streamCompactPartition = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, is_path_alive());
+                num_paths = streamCompactPartition - dev_paths;
+        #endif
+
+        iterationComplete = (depth == traceDepth) || (num_paths == 0);
+
 
         if (guiData != NULL)
         {
@@ -445,7 +465,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
-    finalGather<<<numBlocksPixels, blockSize1d>>>(num_paths, dev_image, dev_paths);
+    finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
 
     ///////////////////////////////////////////////////////////////////////////
 
