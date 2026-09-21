@@ -45,13 +45,26 @@ __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(
 }
 
 __host__ __device__ void scatterRay(
-    PathSegment & pathSegment,
+    PathSegment& pathSegment,
     glm::vec3 intersect,
     glm::vec3 normal,
-    const Material &m,
-    thrust::default_random_engine &rng)
+    const Material& m,
+    thrust::default_random_engine& rng)
 {
-    // TODO: implement this.
-    // A basic implementation of pure-diffuse shading will just call the
-    // calculateRandomDirectionInHemisphere defined above.
+    glm::vec3 newDir;
+
+    if (m.hasReflective > 0) {
+        // Perfect specular: mirror the incoming ray about the surface normal
+        newDir = glm::reflect(pathSegment.ray.direction, normal);
+        pathSegment.color *= m.specular.color;
+    }
+    else {
+        // Ideal diffuse: cosine-weighted sampling makes bsdf * cos / pdf
+        // collapse to just the albedo (cos and pi terms cancel)
+        newDir = calculateRandomDirectionInHemisphere(normal, rng);
+        pathSegment.color *= m.color;
+    }
+
+    pathSegment.ray.direction = normalize(newDir);
+    pathSegment.ray.origin = intersect + 0.001f * pathSegment.ray.direction; // Offset origin off the surface to avoid self-intersection (shadow acne)
 }
