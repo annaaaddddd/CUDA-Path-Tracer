@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cuda.h>
 #include <cmath>
+#include <chrono>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
@@ -20,6 +21,10 @@
 
 // Toggle stream compaction of terminated paths (for performance comparison)
 #define STREAM_COMPACTION 1
+
+// Log perf stats to console: paths alive per bounce (first iteration only)
+// and average ms/iteration + FPS every 100 iterations
+#define PERF_LOG 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -402,6 +407,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // TODO: perform one iteration of path tracing
 
+#if PERF_LOG
+    static double perfAccumMs = 0.0;
+    static int perfFrameCount = 0;
+    const auto perfStart = std::chrono::high_resolution_clock::now();
+#endif
+
     generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
     checkCUDAError("generate camera ray");
 
@@ -449,10 +460,17 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_materials
         );
 
-        #if STREAM_COMPACTION
-                PathSegment* streamCompactPartition = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, is_path_alive());
-                num_paths = streamCompactPartition - dev_paths;
-        #endif
+#if STREAM_COMPACTION
+        PathSegment* streamCompactPartition = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, is_path_alive());
+        num_paths = streamCompactPartition - dev_paths;
+#endif
+
+#if PERF_LOG
+        if (iter == 1)
+        {
+            printf("[perf] bounce %d: %d paths alive\n", depth, num_paths);
+        }
+#endif
 
         iterationComplete = (depth == traceDepth) || (num_paths == 0);
 
@@ -475,6 +493,20 @@ void pathtrace(uchar4* pbo, int frame, int iter)
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,
         pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+
+#if PERF_LOG
+    // The cudaMemcpy above synchronizes the device, so host timing covers all GPU work.
+    const auto perfEnd = std::chrono::high_resolution_clock::now();
+    perfAccumMs += std::chrono::duration<double, std::milli>(perfEnd - perfStart).count();
+    perfFrameCount++;
+    if (perfFrameCount == 100)
+    {
+        printf("[perf] iter %d: avg %.2f ms/iteration (%.1f FPS) over last 100 iterations\n",
+            iter, perfAccumMs / perfFrameCount, 1000.0 * perfFrameCount / perfAccumMs);
+        perfAccumMs = 0.0;
+        perfFrameCount = 0;
+    }
+#endif
 
     checkCUDAError("pathtrace");
 }
