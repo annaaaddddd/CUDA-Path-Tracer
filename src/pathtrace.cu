@@ -8,6 +8,7 @@
 #include <thrust/random.h>
 #include <thrust/remove.h>
 #include <thrust/partition.h>
+#include <thrust/sort.h>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -25,6 +26,9 @@
 // Log perf stats to console: paths alive per bounce (first iteration only)
 // and average ms/iteration + FPS every 100 iterations
 #define PERF_LOG 1
+
+// Sort paths by material before starting shading
+#define SORT_BY_MATERIAL 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -351,9 +355,18 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 struct is_path_alive
 {
     __host__ __device__
-        bool operator()(const PathSegment& p)
+        const bool operator()(const PathSegment& p)
     {
         return p.remainingBounces > 0;
+    }
+};
+
+struct material_id_less
+{
+    __host__ __device__
+        const bool operator()(const ShadeableIntersection& a, const ShadeableIntersection& b)
+    {
+        return a.materialId < b.materialId;
     }
 };
 
@@ -443,14 +456,14 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         cudaDeviceSynchronize();
         depth++;
 
-        // TODO:
+
         // --- Shading Stage ---
         // Shade path segments based on intersections and generate new rays by
         // evaluating the BSDF.
-        // Start off with just a big kernel that handles all the different
-        // materials you have in the scenefile.
-        // TODO: compare between directly shading the path segments and shading
-        // path segments that have been reshuffled to be contiguous in memory.
+
+#if SORT_BY_MATERIAL
+        thrust::sort_by_key(thrust::device, dev_intersections, dev_intersections + num_paths, dev_paths, material_id_less());
+#endif
 
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
