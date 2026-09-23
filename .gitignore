@@ -557,3 +557,7 @@ xcuserdata
 *.xccheckout
 *.moved-aside
 *.xcuserstate
+
+# local perf artifacts
+imgui.ini
+analysis/run-500/
