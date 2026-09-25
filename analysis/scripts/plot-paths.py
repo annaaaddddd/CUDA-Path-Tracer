@@ -1,4 +1,4 @@
-"""Plots analysis/paths.csv as img/paths_alive_per_bounce.png."""
+"""Plots analysis/data/paths.csv as img/paths_alive_per_bounce.png."""
 import csv
 import collections
 import matplotlib
@@ -13,7 +13,7 @@ OPEN_C = "#2a78d6"
 CLOSED_C = "#eb6834"
 
 series = collections.defaultdict(dict)
-with open("analysis/paths.csv") as f:
+with open("analysis/data/paths.csv") as f:
     for row in csv.DictReader(f):
         series[(row["scene"], row["compaction"])][int(row["bounce"])] = int(row["paths_alive"])
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Sweeps compaction ON/OFF over the open and closed Cornell boxes, with sorting
-# and AA off so compaction is the only variable. Writes analysis/{paths,timing}.csv
+# and AA off so compaction is the only variable. Writes analysis/data/{paths,timing}.csv
 # and restores the files it edits on exit, including on Ctrl-C.
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 SRC=src/pathtrace.cu
 EXE=build/bin/Release/cis565_path_tracer.exe
@@ -24,8 +24,8 @@ restore() {
 trap restore EXIT
 
 mkdir -p analysis/logs
-echo "scene,compaction,bounce,paths_alive" > analysis/paths.csv
-echo "scene,compaction,ms_per_iter,fps"    > analysis/timing.csv
+echo "scene,compaction,bounce,paths_alive" > analysis/data/paths.csv
+echo "scene,compaction,ms_per_iter,fps"    > analysis/data/timing.csv
 
 for s in "${SCENES[@]}"; do
     sed -i -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/" "scenes/$s.json"
@@ -40,10 +40,10 @@ for s in "${SCENES[@]}"; do
         "$EXE" "scenes/$s.json" | tee "$log"
         mv -f "$s".*samp.png "build/$s-compaction-$c-${ITERS}samp.png" 2>/dev/null || true
         awk -v s="$s" -v c="$c" '
-            /bounce [0-9]+:/ { print s","c","$3+0","$4 >> "analysis/paths.csv" }
-            /ms\/iteration/  { gsub(/[()]/,""); print s","c","$5","$7 >> "analysis/timing.csv" }
+            /bounce [0-9]+:/ { print s","c","$3+0","$4 >> "analysis/data/paths.csv" }
+            /ms\/iteration/  { gsub(/[()]/,""); print s","c","$5","$7 >> "analysis/data/timing.csv" }
         ' "$log"
     done
 done
 
-echo "wrote analysis/paths.csv and analysis/timing.csv"
+echo "wrote analysis/data/paths.csv and analysis/data/timing.csv"
