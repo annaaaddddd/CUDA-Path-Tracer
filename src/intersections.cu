@@ -111,3 +111,48 @@ __host__ __device__ float sphereIntersectionTest(
 
     return glm::length(r.origin - intersectionPoint);
 }
+
+
+__host__ __device__ bool aabbIntersectionTest(
+    glm::vec3 aabbMin,
+    glm::vec3 aabbMax,
+    Ray r)
+{
+    // slab test; a zero direction component gives +-inf, which min/max handle fine
+    glm::vec3 invDir = 1.0f / r.direction;
+    glm::vec3 t0 = (aabbMin - r.origin) * invDir;
+    glm::vec3 t1 = (aabbMax - r.origin) * invDir;
+    glm::vec3 tNear = glm::min(t0, t1);
+    glm::vec3 tFar = glm::max(t0, t1);
+
+    // enter = latest slab entry, exit = earliest slab exit
+    float tEnter = glm::max(glm::max(tNear.x, tNear.y), tNear.z);
+    float tExit = glm::min(glm::min(tFar.x, tFar.y), tFar.z);
+    // tExit > 0 (not tEnter) so a ray starting inside the box still counts
+    return tEnter <= tExit && tExit > 0.0f;
+}
+
+__host__ __device__ float triangleIntersectionTest(
+    const Triangle& triangle,
+    Ray r,
+    glm::vec3& intersectionPoint,
+    glm::vec3& normal,
+    bool& outside)
+{
+    // glm 0.9.x: bary.x/.y weight vertices[1]/[2], bary.z is t; back faces are culled
+    glm::vec3 bary;
+    bool hit = glm::intersectRayTriangle(r.origin, r.direction, triangle.vertices[0], triangle.vertices[1], triangle.vertices[2], bary);
+    // bary is unwritten on a miss, so check before reading it
+    if (!hit || bary.z <= 0.0f) return -1.0f;
+
+    float t = bary.z;
+    intersectionPoint = getPointOnRay(r, t);
+
+    // smooth shading: interpolate vertex normals with the barycentric weights
+    float w0 = 1 - bary.x - bary.y;
+    float w1 = bary.x;
+    float w2 = bary.y;
+    normal = glm::normalize(w0 * triangle.normals[0] + w1 * triangle.normals[1] + w2 * triangle.normals[2]);
+    outside = dot(r.direction, normal) < 0;
+    return t;
+}

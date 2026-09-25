@@ -12,7 +12,8 @@
 enum GeomType
 {
     SPHERE,
-    CUBE
+    CUBE,
+    MESH
 };
 
 struct Ray
@@ -31,6 +32,11 @@ struct Geom
     glm::mat4 transform;
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
+    // MESH only: slice of Scene::triangles plus its world-space bounding box
+    int triStart;
+    int triCount;
+    glm::vec3 aabbMin;
+    glm::vec3 aabbMax;
 };
 
 struct Material
@@ -84,4 +90,13 @@ struct ShadeableIntersection
   float t;
   glm::vec3 surfaceNormal;
   int materialId;
+};
+
+
+// Stored in world space; fixed arrays only because this is memcpy'd to the GPU
+struct Triangle
+{
+    glm::vec3 vertices[3];
+    glm::vec3 normals[3];
+    glm::vec2 uvs[3];
 };

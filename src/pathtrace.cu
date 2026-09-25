@@ -33,6 +33,9 @@
 // Anti-aliasing
 #define ANTIALIASING 1
 
+// Skip a mesh's triangle loop when the ray misses its bounding box
+#define MESH_AABB_CULL 1
+
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
 void checkCUDAErrorFn(const char* msg, const char* file, int line)
@@ -93,6 +96,7 @@ static Scene* hst_scene = NULL;
 static GuiDataContainer* guiData = NULL;
 static glm::vec3* dev_image = NULL;
 static Geom* dev_geoms = NULL;
+static Triangle* dev_triangles = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
@@ -119,6 +123,9 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_geoms, scene->geoms.size() * sizeof(Geom));
     cudaMemcpy(dev_geoms, scene->geoms.data(), scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
 
+    cudaMalloc(&dev_triangles, scene->triangles.size() * sizeof(Triangle));
+    cudaMemcpy(dev_triangles, scene->triangles.data(), scene->triangles.size() * sizeof(Triangle), cudaMemcpyHostToDevice);
+
     cudaMalloc(&dev_materials, scene->materials.size() * sizeof(Material));
     cudaMemcpy(dev_materials, scene->materials.data(), scene->materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
 
@@ -135,6 +142,7 @@ void pathtraceFree()
     cudaFree(dev_image);  // no-op if dev_image is null
     cudaFree(dev_paths);
     cudaFree(dev_geoms);
+    cudaFree(dev_triangles);
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
     // TODO: clean up any extra device memory you created
@@ -193,6 +201,7 @@ __global__ void computeIntersections(
     PathSegment* pathSegments,
     Geom* geoms,
     int geoms_size,
+    Triangle* triangles,
     ShadeableIntersection* intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -216,6 +225,8 @@ __global__ void computeIntersections(
         for (int i = 0; i < geoms_size; i++)
         {
             Geom& geom = geoms[i];
+            // reset so a geom whose branch does not run cannot inherit the previous t
+            t = -1.0f;
 
             if (geom.type == CUBE)
             {
@@ -224,6 +235,30 @@ __global__ void computeIntersections(
             else if (geom.type == SPHERE)
             {
                 t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+            }
+            else if (geom.type == MESH)
+            {
+#if MESH_AABB_CULL
+                // ray misses the bounding box, skip the whole triangle loop (t stays -1)
+                if (!aabbIntersectionTest(geom.aabbMin, geom.aabbMax, pathSegment.ray)) continue;
+#endif
+                // outputs go through locals so a farther triangle cannot overwrite a nearer hit
+                float meshT = FLT_MAX;
+                for (int j = geom.triStart; j < geom.triStart + geom.triCount; j++)
+                {
+                    glm::vec3 triPoint;
+                    glm::vec3 triNormal;
+                    bool triOutside;
+                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triOutside);
+                    if (tt > 0.0f && tt < meshT)
+                    {
+                        meshT = tt;
+                        tmp_intersect = triPoint;
+                        tmp_normal = triNormal;
+                        outside = triOutside;
+                    }
+                }
+                if (meshT < FLT_MAX) t = meshT;
             }
             // TODO: add more intersection tests here... triangle? metaball? CSG?
 
@@ -463,6 +498,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_geoms,
             hst_scene->geoms.size(),
+            dev_triangles,
             dev_intersections
         );
         checkCUDAError("trace one bounce");
