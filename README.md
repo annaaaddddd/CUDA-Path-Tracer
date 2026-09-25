@@ -86,7 +86,7 @@ The sphere pair clearly shows that without jitter the silhouette is a hard stair
 
 Timing is a host-side `std::chrono` measurement around the whole `pathtrace()` call, averaged per 100 iterations over a full 5000-iteration run with `PERF_LOG` on, at 800x800 and trace depth 8, which means 640,000 paths are born per iteration.
 
-The compaction numbers come from one set of four runs, `analysis/run-perf.sh`, with sorting and anti-aliasing off throughout so that compaction is the only variable. The sorting and anti-aliasing numbers come from a second pair of runs on the same scene, `analysis/run-aa.sh`. Raw CSVs and logs are described in [`analysis/perf-data.md`](analysis/perf-data.md), and the per-pixel image comparisons quoted in this README come from [`analysis/compare-images.py`](analysis/compare-images.py).
+The compaction numbers come from one set of four runs, `analysis/scripts/run-perf.sh`, with sorting and anti-aliasing off throughout so that compaction is the only variable. The sorting and anti-aliasing numbers come from a second pair of runs on the same scene, `analysis/scripts/run-aa.sh`. Raw CSVs and logs are described in [`analysis/perf-data.md`](analysis/perf-data.md), and the per-pixel image comparisons quoted in this README come from [`analysis/scripts/compare-images.py`](analysis/scripts/compare-images.py).
 
 The three optimizations below were each measured on the same open Cornell box, a scene with seven primitives and two BSDFs.
 
@@ -143,7 +143,7 @@ The balance should (in theory) flip once per-ray work gets expensive, as it will
 
 ![](img/paths_alive_per_bounce.png)
 
-*Unterminated paths after each bounce of a single iteration, plotted from `analysis/paths.csv` by `analysis/plot-paths.py`. The dashed line is what runs when compaction is off, which is every thread at every depth in both scenes.*
+*Unterminated paths after each bounce of a single iteration, plotted from `analysis/data/paths.csv` by `analysis/scripts/plot-paths.py`. The dashed line is what runs when compaction is off, which is every thread at every depth in both scenes.*
 
 | Bounce | Paths alive, open box | Paths alive, closed box |
 |---|---|---|
