@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Times the Suzanne scene with mesh AABB culling ON/OFF for each model size.
-# Writes analysis/data/aabb-timing.csv and restores the files it edits on exit.
+# Times the Suzanne scene with mesh AABB culling ON/OFF for each model size
+# Writes analysis/data/aabb-timing.csv and restores the files it edits on exit
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
