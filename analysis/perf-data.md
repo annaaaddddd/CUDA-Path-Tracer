@@ -1,120 +1,45 @@
 # Performance Data
 
-Measured with `PERF_LOG` in `pathtrace.cu`: host-side chrono timing of `pathtrace()` per iteration, averaged per 100 iterations over a full 5000-iteration run, at 800x800 and trace depth 8. Scenes are `scenes/cornell.json` and `scenes/cornell_closed.json`. Runs dated 2026-09-21 and 2026-09-22; each section says which.
+This file records how every number in the README was measured and what the raw readings were. Interpretation lives in the README.
 
-GPU: NVIDIA GeForce RTX 3090 Ti, 24 GB, driver 616.56. CPU: AMD Ryzen 9 5950X, 128 GB. Windows 11 Home.
+## Setup
 
-## How to reproduce
+- GPU: NVIDIA GeForce RTX 3090 Ti, 24 GB, driver 616.56
+- CPU: AMD Ryzen 9 5950X, 128 GB, Windows 11 Home
+- Resolution 800x800 in every run
+- Timing comes from `PERF_LOG` in `src/pathtrace.cu`: host-side chrono around `pathtrace()`, printed as an average over each block of 100 iterations
+- Paths-alive counts are printed once, from iteration 1
 
-`analysis/scripts/run-perf.sh` runs the whole compaction sweep. It builds and runs the open and the closed Cornell box with compaction on and off, with sorting and anti-aliasing forced off in all four so that compaction is the only variable, and it writes the results as CSV.
+Every script runs from the repo root, writes a CSV to `analysis/data/` and the raw console output to `analysis/logs/` (not committed). Scripts that edit `src/pathtrace.cu` or a scene file restore it on exit, including on Ctrl-C, but they do not rebuild afterwards, so the binary left in `build/` is the last configuration that ran. Rebuild before rendering.
+
+| Script | Varies | Rebuilds | Output |
+|---|---|---|---|
+| `run-perf.sh` | compaction on/off, open/closed box | yes | `paths.csv`, `timing.csv` |
+| `run-aa.sh` | sorting, anti-aliasing | yes | `aa-timing.csv` |
+| `run-aabb.sh` | mesh AABB culling, triangle count | yes | `aabb-timing.csv` |
+| `run-refraction.sh` | sphere material, open/closed box | no | `refraction-timing.csv` |
+| `run-depth.sh` | trace depth, open/closed box | no | `depth-timing.csv` |
+
+## run-perf.sh: compaction sweep
 
 ```bash
 bash analysis/scripts/run-perf.sh
 ```
 
-| Output | Columns |
-|---|---|
-| `analysis/data/paths.csv` | scene, compaction, bounce, paths_alive |
-| `analysis/data/timing.csv` | scene, compaction, ms_per_iter, fps |
-| `analysis/logs/*.log` | raw console output of each run |
+- Scenes: `cornell.json` (open), `cornell_closed.json` (closed)
+- 5000 iterations, depth 8, sorting off, anti-aliasing off
+- Run on 2026-09-22; 50 readings per row
 
-`analysis/scripts/run-aa.sh` does the two anti-aliasing runs on the open box and writes `analysis/data/aa-timing.csv` (config, sort, aa, ms_per_iter, fps):
-
-```bash
-bash analysis/scripts/run-aa.sh
-```
-
-`analysis/scripts/plot-paths.py` turns `data/paths.csv` into `img/paths_alive_per_bounce.png`, the chart used in the README:
-
-```bash
-python analysis/scripts/plot-paths.py
-```
-
-The iteration count is set by `ITERS` at the top of `run-perf.sh`, currently 5000, which is what every published number was measured at. Timing does not actually need that many: the per-100-iteration average is flat from the first block onward and the paths-alive counts come from iteration 1 either way, so an earlier 500-iteration pass agreed to within a few tenths of a millisecond. 5000 is kept because it also produces a usable render.
-
-The script edits `src/pathtrace.cu` and the scene files in place and restores them on exit, including on Ctrl-C. Two things to know about that. The restore writes through the existing files rather than replacing them, because Visual Studio holding a file open will otherwise block it, and if a restore still fails the script says so and leaves the originals in its temp directory. Separately, `sed -i` rewrites those files with LF endings while the sweep runs, which only matters if the trap gets skipped entirely.
-
-Each run's PNG is moved into `build/` as `<scene>-compaction-<0|1>-<ITERS>samp.png`. Rename the keepers into `img/`.
-
-For a one-off measurement outside the sweep, the toggles are the four `#define`s at the top of [`src/pathtrace.cu`](../src/pathtrace.cu) and the iteration count is `ITERATIONS` in the scene JSON.
-
-## Material sort ON vs OFF (open Cornell box)
-
-Authoritative pair, from `analysis/scripts/run-aa.sh` (2026-09-22). Compaction and AA are on in both rows, so sorting is the only variable.
-
-| Config | avg ms/iteration | range | ~FPS |
-|---|---|---|---|
-| Sort OFF | 20.11 | 19.50 - 21.31 | 50 |
-| Sort ON (`thrust::sort_by_key`, intersections as keys, paths as values) | 36.03 | 35.27 - 37.07 | 28 |
-
-Sorting costs 15.92 ms/iteration, a 79% slowdown. The shading kernel branches three ways (emitter, scatter, miss) and `scatterRay` splits again into diffuse and specular, none of them expensive, so there is very little divergence for sorting to remove. What it does cost in full is a `thrust::sort_by_key` over two struct arrays, 20-byte intersections as keys and 44-byte path segments as values, up to 640k elements, at each of the 8 bounces. Sorting should only pay off with many materials or genuinely expensive per-material shading.
-
-An earlier standalone run (2026-09-21, AA off, compaction on) put sort-on at ~36.0-38.7 ms against a ~20.6 ms baseline. It agrees, but its two rows were not matched to each other as cleanly, so the pair above is the one quoted in the README.
-
-Sorting also shifts the paths-alive counts very slightly, for example 362,755 against 362,150 at bounce 2, because it moves a path into a different array slot while the RNG is seeded per index. The runs stay statistically equivalent and converge to the same image.
-
-## Anti-aliasing (2026-09-22, resolved)
-
-Two runs from `analysis/scripts/run-aa.sh`, 5000 iterations on the open Cornell box, compaction on in both. Raw output in `analysis/data/aa-timing.csv` and `analysis/logs/aa-*.log`.
-
-| Config | sort | AA | avg ms/iteration | range | ~FPS |
-|---|---|---|---|---|---|
-| sweep baseline | off | off | 20.40 | 19.65 - 21.19 | 49 |
-| aa-only | off | on | 20.11 | 19.50 - 21.31 | 50 |
-| all-on | on | on | 36.03 | 35.27 - 37.07 | 28 |
-
-AA costs -0.29 ms against the baseline, i.e. the jittered run came out marginally faster and the two ranges overlap almost entirely over 50 blocks each. The cost is smaller than the run-to-run spread of either run, so this measurement cannot separate it from zero; it bounds AA at well under 1.5% of a frame rather than pinning a value. That matches the mechanism: two random draws in the ray generation kernel, which runs once per iteration, against an eight-deep bounce loop AA never enters.
-
-The aa-only and all-on rows also give the single-variable sorting measurement quoted in the section above.
-
-Images: `img/cornell_specular_5000samp_aa.png` (full render, all toggles on, 36.0 ms/iter), `img/aa_{on,off}_{sphere_edge,light_edge}.png` (4x nearest-neighbor close-ups; the sphere-edge pair clearly shows stair-stepping vs smooth silhouette).
-
-## Discrepancy resolved
-
-The earlier anti-aliasing entry recorded 40.5-45.9 ms/iter (typ. 42) for compaction + sort + AA all on. Re-running that exact configuration gave 36.03 ms, matching an independent 36.0 ms measurement on `cornell_diffuse.json`. Two runs agree against one, so the 42 figure was contaminated and is discarded. Nothing in the README depends on it any more.
-
-## Open vs closed Cornell box, all toggles on (2026-09-22, superseded)
-
-Superseded by the sweep below for every open-vs-closed claim; kept because its 36.0 ms figure is one half of the anti-aliasing discrepancy. Both runs had compaction, sorting and anti-aliasing all on, 5000 iterations, 800x800, depth 8. The open scene is `scenes/cornell_diffuse.json` (diffuse sphere) and the closed one is `scenes/cornell_closed.json` (specular sphere, front wall at z=+5, camera moved inside to [0,5,4.9]). These are not the clean compaction-only comparison -- that needs the four runs described above -- but the paths-alive contrast is already decisive.
-
-| Bounce | Open, paths alive | Open, % of 640k | Closed, paths alive | Closed, % of 640k |
-|---|---|---|---|---|
-| 1 | 522,877 | 82% | 613,895 | 96% |
-| 2 | 360,502 | 56% | 600,904 | 94% |
-| 3 | 278,065 | 43% | 590,148 | 92% |
-| 4 | 221,486 | 35% | 579,851 | 91% |
-| 5 | 179,596 | 28% | 569,868 | 89% |
-| 6 | 146,587 | 23% | 560,132 | 88% |
-| 7 | 119,897 | 19% | 550,769 | 86% |
-
-| Scene | avg ms/iteration | ~FPS |
-|---|---|---|
-| Open | 35.0 - 36.7, typ. 36.0 | 28 |
-| Closed | 62.0 - 63.3, typ. 62.5 | 16 |
-
-The open box loses 18-31% of its surviving paths per bounce; the closed box loses 4.1% at bounce 1 and 1.7% thereafter. Sealing the front wall removes escape-to-background, leaving a light hit as the only way to terminate early, and a light hit is rare. By bounce 7 the closed scene still has 86% of its paths alive against 19% for the open one, which is exactly the situation where compaction has almost nothing left to remove while still paying its full per-bounce cost.
-
-The closed scene is also 1.7x slower per iteration in absolute terms, for a reason that has nothing to do with compaction: paths that used to fly out of the open wall at bounce 1 now keep bouncing and keep paying for intersection tests.
-
-Open-scene image: `img/cornell_diffuse_5000samp.png`. Verified against `img/REFERENCE_cornell.5000samp.png` by per-pixel comparison with `analysis/scripts/compare-images.py` -- mean absolute difference 2.13/255, RMS 3.21, worst 4x4 region mean within 0.07%, which is Monte Carlo noise rather than a systematic difference. The same script produces the compaction-pair comparison (MAD 1.51/255, global means equal to three decimals):
-
-```bash
-python analysis/scripts/compare-images.py img/cornell_diffuse_5000samp.png img/REFERENCE_cornell.5000samp.png
-python analysis/scripts/compare-images.py img/cornell_specular_5000samp.png img/cornell_specular_5000samp_no_compaction.png
-```
-
-## Compaction sweep (2026-09-22) -- source of record
-
-Every compaction number in the README comes from here. Four runs from `analysis/scripts/run-perf.sh` at 5000 iterations, sorting and anti-aliasing off in all four so compaction is the only variable. An earlier 500-iteration pass of the same four runs agreed with this one to within a few tenths of a millisecond, confirming that ms/iteration does not depend on the iteration count; its output is kept locally but not committed.
-
-| Scene | Compaction | avg ms/iteration | range | ~FPS |
+| Scene | Compaction | avg ms/iteration | range | fps |
 |---|---|---|---|---|
 | open | on | 20.40 | 19.65 - 21.19 | 49 |
 | open | off | 17.09 | 16.73 - 17.58 | 59 |
 | closed | on | 35.97 | 35.10 - 37.16 | 28 |
 | closed | off | 19.74 | 19.21 - 21.05 | 51 |
 
-| Bounce | open, compaction on | closed, compaction on | compaction off, both scenes |
+Paths alive after each bounce, iteration 1:
+
+| Bounce | open, compaction on | closed, compaction on | compaction off, both |
 |---|---|---|---|
 | 1 | 523,164 | 613,916 | 640,000 |
 | 2 | 362,150 | 601,084 | 640,000 |
@@ -124,18 +49,102 @@ Every compaction number in the README comes from here. Four runs from `analysis/
 | 6 | 146,600 | 560,637 | 640,000 |
 | 7 | 119,912 | 551,106 | 640,000 |
 
-Compaction costs 3.3 ms/iteration in the open box, a 19% slowdown, and 16.2 ms in the closed box, an 82% slowdown. The same optimization is roughly five times more expensive once the room is sealed.
+`analysis/scripts/plot-paths.py` turns `paths.csv` into `img/paths_alive_per_bounce.png`:
 
-`thrust::partition` pays for the length of the array it scans and moves. The open box collapses from 640k live paths to 120k over eight bounces, so its later partitions are cheap. The closed box never falls below 551k, so every bounce moves nearly the whole array and removes almost nothing.
+```bash
+python analysis/scripts/plot-paths.py
+```
 
-With compaction off the two scenes sit close together, 17.09 against 19.74, because neither shortens its launches and the sealed room only does a little more real intersection work. Most of the closed box's 35.97 ms is therefore compaction's own overhead rather than the scene being intrinsically harder. The margin inverts the ranking outright: the closed box with compaction off beats the open box with compaction on, 19.74 against 20.40.
+Note: an earlier 500-iteration pass of the same four runs agreed to within a few tenths of a millisecond, so ms/iteration does not depend on the iteration count. 5000 is kept because it also produces a usable render.
 
-## TODO (for README charts)
+## run-aa.sh: sorting and anti-aliasing
 
-- [x] Closed Cornell box variant: paths-per-bounce done (see above)
-- [x] Closed + open ms/iter with compaction ON vs OFF at 5000 iterations, written up in the README
-- [x] Re-measure AA cost on cornell.json -- done, AA is free within noise
-- [x] Material sort ON vs OFF — done, see above
-- [x] AA on/off close-up crops — done, in img/
-- [ ] Re-run compaction comparison on a heavy scene (after mesh loading)
-- [x] Diffuse-sphere cornell render, verified against the course reference
+```bash
+bash analysis/scripts/run-aa.sh
+```
+
+- Scene: `cornell.json`, 5000 iterations, depth 8, compaction on in every row
+- Run on 2026-09-22; 50 readings per row
+- The baseline row is the open, compaction-on row of the sweep above
+
+| Config | sort | AA | avg ms/iteration | range | fps |
+|---|---|---|---|---|---|
+| sweep baseline | off | off | 20.40 | 19.65 - 21.19 | 49 |
+| aa-only | off | on | 20.11 | 19.50 - 21.31 | 50 |
+| all-on | on | on | 36.03 | 35.27 - 37.07 | 28 |
+
+The aa-only and all-on rows are the single-variable pair for sorting.
+
+Note: a first all-on measurement read 40.5 - 45.9 ms. Two later runs of the same configuration gave 36.0 ms, so the first was discarded.
+
+## run-aabb.sh: mesh bounding-box culling
+
+```bash
+bash analysis/scripts/run-aabb.sh
+```
+
+- Scene: `suzanne.json` with `models/suzanne_4k.gltf` and `models/suzanne_16k.gltf`
+- 100 iterations, depth 8, compaction, sorting and anti-aliasing on
+- Toggle: `MESH_AABB_CULL`
+- Run on 2026-09-25; one reading per row
+
+| Model | Triangles | Culling | ms/iteration | fps |
+|---|---|---|---|---|
+| suzanne_4k | 3,936 | on | 177.49 | 5.6 |
+| suzanne_4k | 3,936 | off | 226.58 | 4.4 |
+| suzanne_16k | 15,744 | on | 622.71 | 1.6 |
+| suzanne_16k | 15,744 | off | 843.14 | 1.2 |
+
+Note: a longer manual run of the 16k model with culling off drifted from 843 to 901 ms over 600 iterations, so the script reads the first block only.
+
+## run-refraction.sh: mirror versus glass
+
+```bash
+bash analysis/scripts/run-refraction.sh
+```
+
+- Scenes: `cornell.json` and `glass_open.json`, `cornell_closed.json` and `glass_closed.json`. Each pair differs only in the sphere's material
+- 300 iterations, depth 8, all toggles on
+- Run on 2026-09-26; three readings per row
+
+| Scene | Material | Box | readings, ms/iteration | avg |
+|---|---|---|---|---|
+| cornell | mirror | open | 36.80, 37.22, 36.87 | 36.96 |
+| glass_open | glass | open | 37.41, 37.37, 37.37 | 37.38 |
+| cornell_closed | mirror | closed | 64.75, 64.70, 64.99 | 64.81 |
+| glass_closed | glass | closed | 64.69, 64.46, 67.25 | 65.47 |
+
+## run-depth.sh: trace depth
+
+```bash
+bash analysis/scripts/run-depth.sh
+```
+
+- Scenes: `glass_open.json`, `glass_closed.json`, with `DEPTH` overridden
+- 300 iterations, all toggles on
+- Run on 2026-09-26; three readings per row
+
+| Scene | Depth | readings, ms/iteration | avg |
+|---|---|---|---|
+| glass_open | 8 | 37.06, 37.03, 37.12 | 37.07 |
+| glass_open | 32 | 54.78, 58.61, 53.68 | 55.69 |
+| glass_closed | 8 | 64.96, 64.72, 65.38 | 65.02 |
+| glass_closed | 32 | 218.20, 218.39, 220.85 | 219.15 |
+
+## Image comparisons
+
+`analysis/scripts/compare-images.py` reports per-pixel differences between two renders:
+
+```bash
+python analysis/scripts/compare-images.py img/cornell_diffuse_5000samp.png img/REFERENCE_cornell.5000samp.png
+python analysis/scripts/compare-images.py img/cornell_specular_5000samp.png img/cornell_specular_5000samp_no_compaction.png
+```
+
+| Pair | mean abs difference | other |
+|---|---|---|
+| diffuse render vs course reference | 2.13 / 255 | RMS 3.21, worst 4x4 region mean within 0.07% |
+| compaction on vs off | 1.51 / 255 | global means equal to three decimals |
+
+## One-off measurements
+
+The toggles are the `#define`s at the top of [`src/pathtrace.cu`](../src/pathtrace.cu). Iteration count and trace depth are `ITERATIONS` and `DEPTH` in the scene JSON.
