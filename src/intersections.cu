@@ -1,4 +1,4 @@
-#include "intersections.h"
+﻿#include "intersections.h"
 
 __host__ __device__ float boxIntersectionTest(
     Geom box,
@@ -50,6 +50,7 @@ __host__ __device__ float boxIntersectionTest(
         }
         intersectionPoint = multiplyMV(box.transform, glm::vec4(getPointOnRay(q, tmin), 1.0f));
         normal = glm::normalize(multiplyMV(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
+        if (!outside) normal = -normal;
         return glm::length(r.origin - intersectionPoint);
     }
 
@@ -104,10 +105,6 @@ __host__ __device__ float sphereIntersectionTest(
 
     intersectionPoint = multiplyMV(sphere.transform, glm::vec4(objspaceIntersection, 1.f));
     normal = glm::normalize(multiplyMV(sphere.invTranspose, glm::vec4(objspaceIntersection, 0.f)));
-    if (!outside)
-    {
-        normal = -normal;
-    }
 
     return glm::length(r.origin - intersectionPoint);
 }
@@ -132,6 +129,42 @@ __host__ __device__ bool aabbIntersectionTest(
     return tEnter <= tExit && tExit > 0.0f;
 }
 
+// Ray/triangle test without back-face culling, so rays leaving
+// a closed mesh (refraction) still hit its inside. Same math as
+// glm::intersectRayTriangle, which rejects a negative determinant
+// bary.x/.y are the weights of vert1/vert2 (vert0 gets 1 - x - y), bary.z is t
+__host__ __device__ bool rayTriangleNoCull(
+    const glm::vec3& orig, 
+    const glm::vec3& dir, 
+    const glm::vec3& vert0, 
+    const glm::vec3& vert1, 
+    const glm::vec3& vert2, 
+    glm::vec3& bary)
+{
+    const float Epsilon = 1e-7f;
+
+    glm::vec3 e1 = vert1 - vert0;
+    glm::vec3 e2 = vert2 - vert0;
+
+    // determinant of the (t, u, v) system; its sign only says which side the ray
+    // came from, so reject just the near-zero (parallel) case
+    glm::vec3 p = cross(dir, e2);
+    float a = dot(e1, p);
+    if (fabs(a) < Epsilon) return false;
+
+    float f = 1.0f / a;
+    glm::vec3 s = orig - vert0;
+    bary.x = f * dot(s, p);
+    if (bary.x < 0 || bary.x > 1) return false;
+
+    glm::vec3 q = cross(s, e1);
+    bary.y = f * dot(dir, q);
+    if (bary.y < 0 || bary.x + bary.y > 1) return false;
+
+    bary.z = f * dot(e2, q);
+    return bary.z >= 0;
+}
+
 __host__ __device__ float triangleIntersectionTest(
     const Triangle& triangle,
     Ray r,
@@ -139,9 +172,8 @@ __host__ __device__ float triangleIntersectionTest(
     glm::vec3& normal,
     bool& outside)
 {
-    // glm 0.9.x: bary.x/.y weight vertices[1]/[2], bary.z is t; back faces are culled
     glm::vec3 bary;
-    bool hit = glm::intersectRayTriangle(r.origin, r.direction, triangle.vertices[0], triangle.vertices[1], triangle.vertices[2], bary);
+    bool hit = rayTriangleNoCull(r.origin, r.direction, triangle.vertices[0], triangle.vertices[1], triangle.vertices[2], bary);
     // bary is unwritten on a miss, so check before reading it
     if (!hit || bary.z <= 0.0f) return -1.0f;
 

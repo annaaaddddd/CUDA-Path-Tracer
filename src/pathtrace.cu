@@ -36,6 +36,11 @@
 // Skip a mesh's triangle loop when the ray misses its bounding box
 #define MESH_AABB_CULL 1
 
+// Debug view: output abs(surface normal) of the first hit instead of shading
+#define DEBUG_NORMALS 0
+// Debug view: paths killed by depth show red, paths that miss everything show blue
+#define DEBUG_TERMINATION 0
+
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
 void checkCUDAErrorFn(const char* msg, const char* file, int line)
@@ -355,6 +360,11 @@ __global__ void shadeMaterial(
         ShadeableIntersection intersection = shadeableIntersections[idx];
         if (intersection.t > 0.0f) // if the intersection exists...
         {
+#if DEBUG_NORMALS
+            pathSegments[idx].color = intersection.surfaceNormal * 0.5f + 0.5f;
+            pathSegments[idx].remainingBounces = 0;
+            return;
+#endif
             // Set up the RNG
             thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, pathSegments[idx].remainingBounces);
             thrust::uniform_real_distribution<float> u01(0, 1);
@@ -373,7 +383,11 @@ __global__ void shadeMaterial(
                 glm::vec3 intersect = getPointOnRay(pathSegments[idx].ray, intersection.t);
                 scatterRay(pathSegments[idx], intersect, intersection.surfaceNormal, material, rng);
                 pathSegments[idx].remainingBounces--;
+#if DEBUG_TERMINATION
+                if (pathSegments[idx].remainingBounces == 0) pathSegments[idx].color = glm::vec3(1.0f, 0.0f, 0.0f);
+#else
                 if (pathSegments[idx].remainingBounces == 0) pathSegments[idx].color = glm::vec3(0.0f);
+#endif
             }
 
         }
@@ -382,7 +396,16 @@ __global__ void shadeMaterial(
             // used for opacity, in which case they can indicate "no opacity".
             // This can be useful for post-processing and image compositing.
         else {
+#if DEBUG_TERMINATION
+            {
+                glm::vec3 d = pathSegments[idx].ray.direction, o = pathSegments[idx].ray.origin;
+                if (isnan(d.x) || isnan(d.y) || isnan(d.z)) pathSegments[idx].color = glm::vec3(0.0f, 1.0f, 0.0f);
+                else if (isnan(o.x) || isnan(o.y) || isnan(o.z)) pathSegments[idx].color = glm::vec3(0.0f, 1.0f, 1.0f);
+                else pathSegments[idx].color = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+#else
             pathSegments[idx].color = glm::vec3(0.0f);
+#endif
             pathSegments[idx].remainingBounces = 0;
         }
     }
