@@ -83,6 +83,8 @@ __host__ __device__ void scatterRay(
         float cosI = -glm::dot(dir, n);
         float R = schlickFresnel(cosI, m.indexOfRefraction);
 
+        // Snell discriminant; glm 0.9 refract returns NaN (not zero) on total internal
+        // reflection, so the test has to happen here
         float k = 1 - (eta * eta) * (1 - cosI * cosI);
 
         thrust::uniform_real_distribution<float> u01(0, 1);

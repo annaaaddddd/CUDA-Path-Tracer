@@ -50,6 +50,7 @@ __host__ __device__ float boxIntersectionTest(
         }
         intersectionPoint = multiplyMV(box.transform, glm::vec4(getPointOnRay(q, tmin), 1.0f));
         normal = glm::normalize(multiplyMV(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
+        // inside hits report the outward normal, same convention as sphere and mesh
         if (!outside) normal = -normal;
         return glm::length(r.origin - intersectionPoint);
     }
@@ -134,11 +135,11 @@ __host__ __device__ bool aabbIntersectionTest(
 // glm::intersectRayTriangle, which rejects a negative determinant
 // bary.x/.y are the weights of vert1/vert2 (vert0 gets 1 - x - y), bary.z is t
 __host__ __device__ bool rayTriangleNoCull(
-    const glm::vec3& orig, 
-    const glm::vec3& dir, 
-    const glm::vec3& vert0, 
-    const glm::vec3& vert1, 
-    const glm::vec3& vert2, 
+    const glm::vec3& orig,
+    const glm::vec3& dir,
+    const glm::vec3& vert0,
+    const glm::vec3& vert1,
+    const glm::vec3& vert2,
     glm::vec3& bary)
 {
     const float Epsilon = 1e-7f;

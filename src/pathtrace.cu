@@ -36,9 +36,10 @@
 // Skip a mesh's triangle loop when the ray misses its bounding box
 #define MESH_AABB_CULL 1
 
-// Debug view: output abs(surface normal) of the first hit instead of shading
+// Debug view: paint the first hit with its normal mapped to [0,1] instead of shading
 #define DEBUG_NORMALS 0
-// Debug view: paths killed by depth show red, paths that miss everything show blue
+// Debug view: paint each path by how it ended, depth exhausted red, NaN direction green,
+// NaN origin cyan, genuine miss blue
 #define DEBUG_TERMINATION 0
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
