@@ -32,7 +32,7 @@ for depth in 0 .. DEPTH-1:
 finalGather                      accumulate each path into its pixel via pixelIndex
 ```
 
-Because compaction and sorting both shuffle the path array, every `PathSegment` carries its own `pixelIndex` — that is the only thing that lets the final gather find its way home.
+Because compaction and sorting both shuffle the path array, every `PathSegment` carries its own `pixelIndex`, and that is the only thing that lets the final gather find its way home.
 
 ## Core pipeline
 
@@ -127,7 +127,7 @@ The balance should flip once per-ray work gets expensive, as it does with meshes
 
 ![](img/cornell_closed_5000samp.png)
 
-*The closed box at 5000 spp, 800x800, depth 8. The centre of the mirror sphere used to be a black disk where the camera's own line of sight escaped through the open front; it now reflects the blue wall standing behind the camera, which is the quickest visual confirmation that the room is really sealed.*
+*The closed box at 5000 spp, 800x800, depth 8. The center of the mirror sphere used to be a black disk where the camera's own line of sight escaped through the open front; it now reflects the blue wall standing behind the camera, which is the quickest visual confirmation that the room is really sealed.*
 
 ![](img/paths_alive_per_bounce.png)
 
@@ -168,7 +168,7 @@ Both rows have compaction and anti-aliasing on, so sorting is the only variable.
 - What it targets: warp divergence in the shading kernel, by making a warp's 32 threads hit the same material branch
 - Why there is nothing to win here: `shadeMaterial` branches three ways (emitter, scatter, miss) and `scatterRay` splits again into diffuse and specular, none of them expensive -> almost no divergence to cure
 - What it costs: a full `thrust::sort_by_key` over 20-byte intersection keys and 44-byte path values, up to 640k elements, at every one of the 8 bounces
-- When it would pay: many materials with genuinely different shading costs, so an unsorted warp stalls on its slowest thread — refraction with Fresnel, texture lookups, a microfacet BSDF
+- When it would pay: many materials with genuinely different shading costs, so an unsorted warp stalls on its slowest thread: refraction with Fresnel, texture lookups, a microfacet BSDF
 
 One detail is worth flagging. The paths-alive counts shift slightly when sorting is on, for instance 362,755 against 362,150 at bounce 2. This is most likely because sorting moves a path into a different array slot while the RNG is seeded per index, so the path draws a different random number than it would have unsorted. The two runs are statistically equivalent and converge to the same image.
 
@@ -189,14 +189,14 @@ The sphere pair clearly shows that without jitter the silhouette is a hard stair
 
 | Configuration | avg ms/iteration | range over 50 blocks | ~FPS |
 |---|---|---|---|
-| Compaction on, sorting off, AA off | 20.40 | 19.65 – 21.19 | 49 |
-| Compaction on, sorting off, AA on | 20.11 | 19.50 – 21.31 | 50 |
+| Compaction on, sorting off, AA off | 20.40 | 19.65 to 21.19 | 49 |
+| Compaction on, sorting off, AA on | 20.11 | 19.50 to 21.31 | 50 |
 
 The difference is -0.29 ms, meaning the run with jitter came out marginally *faster*, and the two ranges overlap almost entirely. The cost of anti-aliasing is smaller than the run-to-run spread of either run, so this measurement cannot separate it from zero. What it does establish is a bound: whatever AA costs, it is well under 1.5% of a frame.
 
 That is where the work sits, too. The jitter is two random draws in the ray generation kernel, which runs once per iteration, while frame time is dominated by the eight-deep bounce loop that anti-aliasing never touches. It buys a visibly better silhouette for nothing measurable.
 
-An earlier run had put the cost at 3 to 9 ms. That measurement was contaminated: re-running the same three toggles gave 36.03 ms against the 40.5 – 45.9 ms first recorded, so the earlier figure is discarded rather than reported.
+An earlier run had put the cost at 3 to 9 ms. That measurement was contaminated: re-running the same three toggles gave 36.03 ms against the 40.5 to 45.9 ms first recorded, so the earlier figure is discarded rather than reported.
 
 ### The core pipeline on a GPU versus a CPU
 
@@ -247,7 +247,7 @@ Each mesh keeps the world-space AABB of its triangles. With `MESH_AABB_CULL` on,
 
 A CPU path tracer would load the glTF the same way; the difference is in traversal.
 - The GPU wins on raw throughput: every live path tests the mesh at once, so 1.2 fps at 16k triangles is still up to 640k paths each testing 15,744 triangles per bounce
-- The GPU loses on divergence: threads in a warp run in lockstep, so a thread whose ray missed the bounding box still waits while its neighbours walk the whole triangle loop. The box test saves that thread's arithmetic but not its time. A CPU core skips the loop the moment its own ray misses
+- The GPU loses on divergence: threads in a warp run in lockstep, so a thread whose ray missed the bounding box still waits while its neighbors walk the whole triangle loop. The box test saves that thread's arithmetic but not its time. A CPU core skips the loop the moment its own ray misses
 
 #### Where mesh loading goes next
 - A BVH or octree turns the linear scan into a logarithmic one, which is the only change that moves the 843 ms figure by more than a constant factor
@@ -332,7 +332,7 @@ Both cubes go through the same `scatterRay`, so the difference had to be on the 
 - Fully closed box: still there, so paths were being lost, not escaping
 - IOR 1.0: both cubes vanish, so entry and exit hits are found correctly
 - Mirror material: both cubes identical, so single hits and normals are fine
-- A debug view that colours paths by how they ended: the frame lit up as "direction is NaN"
+- A debug view that colors paths by how they ended: the frame lit up as "direction is NaN"
 
 Only paths that reflected *inside* the mesh died, and they died with a NaN direction. The source is this repo's glm 0.9.x, whose `refract` handles total internal reflection as
 
@@ -350,6 +350,21 @@ Why nothing had triggered it before:
 Both fixes are one-liners: compute `k` in `scatterRay` and only call `refract` when it is non-negative, and negate the box normal on inside hits so all three geometry types agree.
 
 After both fixes the two cubes agree, and the side faces mirror the red and green walls, which is total internal reflection doing what it should. That render is the image at the top of the [Refraction](#refraction) section.
+
+### The texture that read backwards
+
+![](img/blooper/texture_flipped_v.png)
+
+*A UV checker on the glTF cube. 5000 spp. Every digit is mirrored, and the faces show red and teal digits from the bottom half of the image where black ones from the top half belong.*
+
+What gave it away:
+- The checker's four quadrants are color coded, so each face says which part of the image it is reading
+- Each face straddled the vertical divider as expected, so u was right
+- Each face showed the wrong half top to bottom, so v was inverted
+
+The sampler had `v = 1 - uv.y`, the flip that OpenGL-style code needs because its texture origin is the bottom left. glTF defines the origin at the top left, and `stb_image` returns row 0 as the top row, so the two already agree and v maps straight to the row index. Removing the flip fixed it.
+
+Some digits still sit sideways after the fix. That is the model, not the renderer: Blender's default cube unwraps into a cross, and several faces are rotated 90 degrees in UV space. A winding check on each visible face confirms the texture is rotated but never mirrored.
 
 ### The Blender cube that was twice the size
 
@@ -380,3 +395,4 @@ Every optional stage is a `#define` at the top of [`src/pathtrace.cu`](src/patht
 - Path tracing background and the BSDF formulation follow [Physically Based Rendering, 4th edition](https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection)
 - Staged-kernel pipeline follows the CIS 5650 [path tracing primer recitation](https://docs.google.com/presentation/d/1rr6zFbpVkdMEkxBK4QLN4_tBRo168SJA_bMi2GkBB6I/edit?usp=drive_link)
 - Compaction and sorting use [Thrust](https://nvidia.github.io/cccl/thrust/)
+- UV checker texture from [oxpal.com](https://www.oxpal.com/uv-checker-texture.html)
