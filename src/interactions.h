@@ -6,6 +6,14 @@
 
 #include <thrust/random.h>
 
+/**
+ * Looks up the color of texture `tex` at `uv` with nearest-texel sampling
+ */
+__host__ __device__ glm::vec3 sampleTexture(
+    const glm::vec3* texels,
+    const TextureInfo& tex,
+    glm::vec2 uv);
+
 // CHECKITOUT
 /**
  * Computes a cosine-weighted random direction in a hemisphere.

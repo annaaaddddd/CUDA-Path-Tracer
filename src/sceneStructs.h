@@ -51,6 +51,15 @@ struct Material
     float hasRefractive;
     float indexOfRefraction;
     float emittance;
+    int albedoTex;   // index into the texture table, -1 when the material has no image
+};
+
+// One loaded image, stored as a slice of the shared texel array
+struct TextureInfo
+{
+    int offset;   // index of this image's first texel
+    int width;
+    int height;
 };
 
 struct Camera
@@ -90,6 +99,7 @@ struct ShadeableIntersection
   float t;
   glm::vec3 surfaceNormal;
   int materialId;
+  glm::vec2 uv;
 };
 
 

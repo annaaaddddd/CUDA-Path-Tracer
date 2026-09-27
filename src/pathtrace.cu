@@ -38,6 +38,10 @@
 
 // Debug view: paint the first hit with its normal mapped to [0,1] instead of shading
 #define DEBUG_NORMALS 0
+
+// Debug view: paint the first hit with its uv as (u, v, 0) instead of shading
+#define DEBUG_UV 0
+
 // Debug view: paint each path by how it ended, depth exhausted red, NaN direction green,
 // NaN origin cyan, genuine miss blue
 #define DEBUG_TERMINATION 0
@@ -106,6 +110,8 @@ static Triangle* dev_triangles = NULL;
 static Material* dev_materials = NULL;
 static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
+static glm::vec3* dev_texels = NULL;
+static TextureInfo* dev_textures = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -139,6 +145,11 @@ void pathtraceInit(Scene* scene)
     cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
     // TODO: initialize any extra device memeory you need
+    cudaMalloc(&dev_texels, scene->texels.size() * sizeof(glm::vec3));
+    cudaMemcpy(dev_texels, scene->texels.data(), scene->texels.size() * sizeof(glm::vec3), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&dev_textures, scene->textures.size() * sizeof(TextureInfo));
+    cudaMemcpy(dev_textures, scene->textures.data(), scene->textures.size() * sizeof(TextureInfo), cudaMemcpyHostToDevice);
 
     checkCUDAError("pathtraceInit");
 }
@@ -152,6 +163,8 @@ void pathtraceFree()
     cudaFree(dev_materials);
     cudaFree(dev_intersections);
     // TODO: clean up any extra device memory you created
+    cudaFree(dev_texels);
+    cudaFree(dev_textures);
 
     checkCUDAError("pathtraceFree");
 }
@@ -197,7 +210,7 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
     }
 }
 
-// TODO:
+
 // computeIntersections handles generating ray intersections ONLY.
 // Generating new rays is handled in your shader(s).
 // Feel free to modify the code below.
@@ -219,12 +232,14 @@ __global__ void computeIntersections(
         float t;
         glm::vec3 intersect_point;
         glm::vec3 normal;
+        glm::vec2 uv;
         float t_min = FLT_MAX;
         int hit_geom_index = -1;
         bool outside = true;
 
         glm::vec3 tmp_intersect;
         glm::vec3 tmp_normal;
+        glm::vec2 tmp_uv;
 
         // naive parse through global geoms
 
@@ -236,11 +251,12 @@ __global__ void computeIntersections(
 
             if (geom.type == CUBE)
             {
-                t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, tmp_uv, outside);
             }
             else if (geom.type == SPHERE)
             {
                 t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                tmp_uv = glm::vec2(0.0, 0.0);
             }
             else if (geom.type == MESH)
             {
@@ -254,13 +270,15 @@ __global__ void computeIntersections(
                 {
                     glm::vec3 triPoint;
                     glm::vec3 triNormal;
+                    glm::vec2 triUV;
                     bool triOutside;
-                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triOutside);
+                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triUV, triOutside);
                     if (tt > 0.0f && tt < meshT)
                     {
                         meshT = tt;
                         tmp_intersect = triPoint;
                         tmp_normal = triNormal;
+                        tmp_uv = triUV;
                         outside = triOutside;
                     }
                 }
@@ -276,6 +294,7 @@ __global__ void computeIntersections(
                 hit_geom_index = i;
                 intersect_point = tmp_intersect;
                 normal = tmp_normal;
+                uv = tmp_uv;
             }
         }
 
@@ -289,6 +308,7 @@ __global__ void computeIntersections(
             intersections[path_index].t = t_min;
             intersections[path_index].materialId = geoms[hit_geom_index].materialid;
             intersections[path_index].surfaceNormal = normal;
+            intersections[path_index].uv = uv;
         }
     }
 }
@@ -352,7 +372,9 @@ __global__ void shadeMaterial(
     int num_paths,
     ShadeableIntersection* shadeableIntersections,
     PathSegment* pathSegments,
-    Material* materials)
+    Material* materials,
+    glm::vec3* texels,
+    TextureInfo* textures)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < num_paths)
@@ -366,11 +388,21 @@ __global__ void shadeMaterial(
             pathSegments[idx].remainingBounces = 0;
             return;
 #endif
+#if DEBUG_UV
+            pathSegments[idx].color = glm::vec3(intersection.uv, 0.0f);
+            pathSegments[idx].remainingBounces = 0;
+            return;
+#endif
             // Set up the RNG
             thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, pathSegments[idx].remainingBounces);
             thrust::uniform_real_distribution<float> u01(0, 1);
 
             Material material = materials[intersection.materialId];
+            // material is a local copy, so a textured hit can overwrite its color
+            // and scatterRay picks it up unchanged
+            if (material.albedoTex >= 0) {
+                material.color = sampleTexture(texels, textures[material.albedoTex], intersection.uv);
+            }
             glm::vec3 materialColor = material.color;
 
             // If the material indicates that the object was a light, "light" the ray
@@ -543,7 +575,9 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             num_paths,
             dev_intersections,
             dev_paths,
-            dev_materials
+            dev_materials,
+            dev_texels,
+            dev_textures
         );
 
 #if STREAM_COMPACTION

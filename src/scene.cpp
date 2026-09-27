@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include "json.hpp"
+#include <stb_image.h>
 
 #include <cfloat>
 #include <fstream>
@@ -207,10 +208,42 @@ void Scene::loadGLTF(const std::string& path, Geom& geom)
     geom.aabbMax = aabbMax;
 }
 
+// Loads one image, appends its pixels to `texels` and returns its index in `textures`
+int Scene::loadTexture(const std::string& path)
+{
+    cout << "Loading texture " << path << " ..." << endl;
+
+    // the last argument forces 3 channels, whatever the file has
+    int w, h, channels;
+    unsigned char* data = stbi_load(path.c_str(), &w, &h, &channels, 3);
+    if (!data) { cout << "  could not load " << path << endl; exit(-1); }
+
+    TextureInfo info;
+    // this image starts where the texel array currently ends
+    info.offset = texels.size();
+    info.width = w;
+    info.height = h;
+
+    // stb gives 3 bytes per pixel in 0..255, row by row from the top; store floats in 0..1
+    for (int i = 0; i < w * h; i++) {
+        glm::vec3 rgb(data[3 * i] / 255.0, data[3 * i + 1] / 255.0, data[3 * i + 2] / 255.0);
+        texels.push_back(rgb);
+    }
+
+    stbi_image_free(data);
+    textures.push_back(info);
+
+    cout << "  " << w << " x " << h << ", " << channels << " channels in file, first texel "
+         << glm::to_string(texels[info.offset]) << endl;
+    return (int)textures.size() - 1;
+}
+
 void Scene::loadFromJSON(const std::string& jsonName)
 {
     std::ifstream f(jsonName);
     json data = json::parse(f);
+    // paths inside the scene file are relative to the scene file
+    std::string sceneDir = jsonName.substr(0, jsonName.find_last_of("/\\") + 1);
     const auto& materialsData = data["Materials"];
     std::unordered_map<std::string, uint32_t> MatNameToID;
     for (const auto& item : materialsData.items())
@@ -218,6 +251,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
         const auto& name = item.key();
         const auto& p = item.value();
         Material newMaterial{};
+        newMaterial.albedoTex = -1;
         // TODO: handle materials loading differently
         if (p["TYPE"] == "Diffuse")
         {
@@ -243,6 +277,11 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
             newMaterial.hasRefractive = 1.0;
             newMaterial.indexOfRefraction = p["IOR"];
+        }
+        // optional image for the base color, any material type
+        if (p.contains("TEXTURE"))
+        {
+            newMaterial.albedoTex = loadTexture(sceneDir + p["TEXTURE"].get<std::string>());
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
@@ -277,8 +316,6 @@ void Scene::loadFromJSON(const std::string& jsonName)
         newGeom.invTranspose = glm::inverseTranspose(newGeom.transform);
         if (newGeom.type == MESH)
         {
-            // mesh FILE paths are relative to the scene JSON, not the working directory
-            std::string sceneDir = jsonName.substr(0, jsonName.find_last_of("/\\") + 1);
             loadGLTF(sceneDir + p["FILE"].get<std::string>(), newGeom);
         }
 

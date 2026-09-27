@@ -44,6 +44,26 @@ __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(
         + sin(around) * over * perpendicularDirection2;
 }
 
+__host__ __device__ glm::vec3 sampleTexture(
+    const glm::vec3* texels,
+    const TextureInfo& tex,
+    glm::vec2 uv)
+{
+    // glTF puts v = 0 at the top of the image, same as stb's row 0, so no flip
+    float u = uv.x;
+    float v = uv.y;
+
+    // keep the fractional part so tiling UVs wrap and uv == 1 stays inside the image
+    u = u - floor(u);
+    v = v - floor(v);
+
+    // nearest texel: scale to pixel coordinates, then index this image's slice
+    int x = floor(u * tex.width);
+    int y = floor(v * tex.height);
+
+    return texels[tex.offset + y * tex.width + x];
+}
+
 // Schlick approximation of the Fresnel reflectance for a dielectric
 // cosTheta is the cosine between the incoming ray and the normal facing it
 __host__ __device__ float schlickFresnel(float cosTheta, float ior)

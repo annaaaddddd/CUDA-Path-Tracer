@@ -5,6 +5,7 @@ __host__ __device__ float boxIntersectionTest(
     Ray r,
     glm::vec3 &intersectionPoint,
     glm::vec3 &normal,
+    glm::vec2 &uv,
     bool &outside)
 {
     Ray q;
@@ -50,6 +51,43 @@ __host__ __device__ float boxIntersectionTest(
         }
         intersectionPoint = multiplyMV(box.transform, glm::vec4(getPointOnRay(q, tmin), 1.0f));
         normal = glm::normalize(multiplyMV(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
+
+        // uv from the object-space hit point, where the cube spans -0.5 to 0.5: drop the
+        // axis the face normal points along, the other two shifted by 0.5 cover [0, 1]
+        // Each face is oriented as seen from outside, with v = 0 at the top of the image
+        glm::vec3 p = getPointOnRay(q, tmin);
+        glm::vec3 faceN = outside ? tmin_n : -tmin_n;
+        uv = glm::vec2(0.0f);
+        if (faceN.z > 0.5f)
+        {
+            // +z: x runs right and y runs up, so v counts down from the top
+            uv = glm::vec2(p.x + 0.5f, 0.5f - p.y);
+        }
+        else if (faceN.z < -0.5f)
+        {
+            // -z: seen from behind, x runs left
+            uv = glm::vec2(0.5f - p.x, 0.5f - p.y);
+        }
+        else if (faceN.x > 0.5f)
+        {
+            // +x: z runs left, away from a viewer standing on the +x side
+            uv = glm::vec2(0.5f - p.z, 0.5f - p.y);
+        }
+        else if (faceN.x < -0.5f)
+        {
+            // -x: z runs right
+            uv = glm::vec2(p.z + 0.5f, 0.5f - p.y);
+        }
+        else if (faceN.y > 0.5f)
+        {
+            // +y: seen from above with x to the right, the top edge is the -z side
+            uv = glm::vec2(p.x + 0.5f, p.z + 0.5f);
+        }
+        else
+        {
+            // -y: seen from below with x to the right, the top edge is the +z side
+            uv = glm::vec2(p.x + 0.5f, 0.5f - p.z);
+        }
         // inside hits report the outward normal, same convention as sphere and mesh
         if (!outside) normal = -normal;
         return glm::length(r.origin - intersectionPoint);
@@ -171,6 +209,7 @@ __host__ __device__ float triangleIntersectionTest(
     Ray r,
     glm::vec3& intersectionPoint,
     glm::vec3& normal,
+    glm::vec2& uv,
     bool& outside)
 {
     glm::vec3 bary;
@@ -186,6 +225,7 @@ __host__ __device__ float triangleIntersectionTest(
     float w1 = bary.x;
     float w2 = bary.y;
     normal = glm::normalize(w0 * triangle.normals[0] + w1 * triangle.normals[1] + w2 * triangle.normals[2]);
+    uv = w0 * triangle.uvs[0] + w1 * triangle.uvs[1] + w2 * triangle.uvs[2];
     outside = dot(r.direction, normal) < 0;
     return t;
 }
