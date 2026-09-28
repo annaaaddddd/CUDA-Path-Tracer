@@ -38,9 +38,7 @@ Because compaction and sorting both shuffle the path array, every `PathSegment` 
 
 These are the pieces everything else is built on: the shading kernel, and the three stages that reshape the path array around it.
 
-Timing is a host-side `std::chrono` measurement around the whole `pathtrace()` call, averaged per 100 iterations over a full 5000-iteration run with `PERF_LOG` on, at 800x800 and trace depth 8, which means 640,000 paths are born per iteration.
-
-Every timing in this README changes one variable at a time. The scripts, scenes, iteration counts and raw readings behind each table are in [`analysis/perf-data.md`](analysis/perf-data.md).
+Every timing in this README is milliseconds per iteration at 800x800, which is 640,000 paths per iteration, and changes one variable at a time. How each number was measured, with the raw readings, is in [`analysis/perf-data.md`](analysis/perf-data.md).
 
 The three optimizations below were each measured on the same open Cornell box, a scene with seven primitives and two BSDFs.
 
@@ -131,7 +129,7 @@ The balance should flip once per-ray work gets expensive, as it does with meshes
 
 ![](img/paths_alive_per_bounce.png)
 
-*Unterminated paths after each bounce of a single iteration, plotted from `analysis/data/paths.csv` by `analysis/scripts/plot-paths.py`. The dashed line is what runs when compaction is off, which is every thread at every depth in both scenes.*
+*Unterminated paths after each bounce of a single iteration. The dashed line is what runs when compaction is off, which is every thread at every depth in both scenes.*
 
 | Bounce | Paths alive, open box | Paths alive, closed box |
 |---|---|---|
@@ -250,9 +248,9 @@ A CPU path tracer would load the glTF the same way; the difference is in travers
 - The GPU loses on divergence: threads in a warp run in lockstep, so a thread whose ray missed the bounding box still waits while its neighbors walk the whole triangle loop. The box test saves that thread's arithmetic but not its time. A CPU core skips the loop the moment its own ray misses
 
 #### Where mesh loading goes next
-- A BVH or octree turns the linear scan into a logarithmic one, which is the only change that moves the 843 ms figure by more than a constant factor
-- Sorting triangles into a spatially coherent order, or storing them as a structure of arrays, so that consecutive threads read consecutive memory
-- Loading every primitive of a mesh and the glTF's own node transforms, both of which the loader currently ignores
+
+- A BVH, so a ray stops testing every triangle
+- Load every part of a glTF file, not just the first mesh
 
 ### Refraction
 
@@ -313,10 +311,73 @@ The cost that does show up with glass is indirect: it wants a deeper trace. The 
 
 #### Where refraction goes next
 
-- Use the full Fresnel equations instead of Schlick; the approximation is worst exactly where glass is most visible, near grazing angles
-- Russian roulette instead of a hard depth cut, so trapped paths die by probability rather than all at once at depth 32
-- Nested dielectrics with an explicit medium stack, so water inside a glass uses the glass-to-water ratio at the shared boundary instead of pretending there is air between them
-- Rough glass through a microfacet distribution, which is what a real kitchen glass looks like
+- Russian roulette instead of a fixed depth limit
+- Water inside glass, which needs to know which material the ray is already in
+- Rough glass
+
+### Texture mapping
+
+| Nearest texel | Bilinear |
+|---|---|
+| ![](img/texture_nearest.png) | ![](img/texture_bilinear.png) |
+
+*An 8 x 8 pixel image stretched over two cubes, the base code's box on the left and a glTF cube on the right. 800x800, about 3000 and 2000 spp.*
+
+A material can take its base color from an image or from a formula instead of a constant. Both work on loaded meshes and on the base code's boxes.
+
+How a color gets from the image to the hit:
+- The triangle test interpolates the three vertex UVs with the same barycentric weights it already uses for normals, and the UV travels in `ShadeableIntersection` to the shading kernel
+- Boxes have no UVs of their own, so the box test computes them from the object-space hit point: drop the axis the face normal points along, shift the other two by 0.5. Each face is oriented as seen from outside, checked with `right x up = outward normal`
+- Every image is decoded with `stb_image` and appended to one flat array of texels. A small table records each image's `offset`, `width` and `height`, and a material stores an index into that table
+- The kernel takes two pointers no matter how many images the scene has, the same layout as the triangle array and its per-mesh ranges
+- Sampling wraps UVs, then either takes the nearest texel or blends the four around the sample point, behind `TEXTURE_BILINEAR`
+
+| Plain | Image texture | UV debug view |
+|---|---|---|
+| ![](img/mesh_vs_primitive_5000samp.png) | ![](img/texture_cube_5000samp.png) | ![](img/uv_debug_cube.png) |
+
+*Same layout, same camera. The textured glTF cube has one full UV square per face. The debug view paints (u, v, 0) on the first hit of a cube with Blender's default cross unwrap, where each face covers a sixteenth of the image.*
+
+#### Procedural tiles
+
+![](img/procedural_tiles_5000samp.png)
+
+*Left: tiles computed in the shader, 4 x 4 per face. Right: the UV checker image. 5000 spp.*
+
+The tile pattern is three lines of arithmetic on the UV:
+- Scale by the tile count and keep the fractional part, which is the position inside the current tile
+- Take the distance to the nearest tile edge on each axis
+- Closer than half a grout width on either axis is grout, anything else is tile
+
+It needs no memory, and it stays sharp at any distance because there are no texels to run out of.
+
+#### Texture mapping performance
+
+One Cornell box, all five walls sharing one material so that most hits on every bounce sample it, rendered three ways:
+
+| Wall material | ms/iteration | vs plain |
+|---|---|---|
+| Flat color | 39.60 | baseline |
+| Image, 2048 x 2048, nearest | 39.76 | +0.4% |
+| Procedural tiles | 39.86 | +0.7% |
+
+- The readings inside each row spread by 0.5 to 0.8 ms and the rows differ by at most 0.26 ms, so the three cannot be told apart. What the measurement gives is a bound: texturing costs under 1% of a frame
+- The image and the formula draw the same pattern with the same colors, so the only variable is a memory read against a few multiplies
+- A path samples at most once per bounce, next to an intersection test against every object, a sort and a partition
+
+Nothing was done to accelerate it, and the measurement is the reason. CUDA texture objects would move filtering and wrapping into hardware, but they cannot beat not sampling at all, and not sampling at all is only 0.16 ms ahead. The gain available is smaller than the noise, so the simpler layout stayed.
+
+#### Texture mapping on a GPU versus a CPU
+
+- The lookup is the same arithmetic on both
+- Memory access is where they could differ: neighboring threads in a warp hit unrelated points, so their texel reads land far apart in a 50 MB array. None of that showed up in the timings
+- The branch between image, procedural and plain is per material, so material sorting lines a warp up on one of them. At under 1% there is little for it to recover
+
+#### Where texture mapping goes next
+
+- Mipmaps, so distant textures do not shimmer
+- Store texels as bytes instead of floats: the 4096 x 4096 checker takes 201 MB today
+- A procedural marble
 
 ## Bloopers
 

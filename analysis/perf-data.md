@@ -19,6 +19,7 @@ Every script runs from the repo root, writes a CSV to `analysis/data/` and the r
 | `run-aabb.sh` | mesh AABB culling, triangle count | yes | `aabb-timing.csv` |
 | `run-refraction.sh` | sphere material, open/closed box | no | `refraction-timing.csv` |
 | `run-depth.sh` | trace depth, open/closed box | no | `depth-timing.csv` |
+| `run-texture.sh` | wall material: plain, image, procedural | no | `texture-timing.csv` |
 
 ## run-perf.sh: compaction sweep
 
@@ -130,6 +131,23 @@ bash analysis/scripts/run-depth.sh
 | glass_open | 32 | 54.78, 58.61, 53.68 | 55.69 |
 | glass_closed | 8 | 64.96, 64.72, 65.38 | 65.02 |
 | glass_closed | 32 | 218.20, 218.39, 220.85 | 219.15 |
+
+## run-texture.sh: plain versus image versus procedural
+
+```bash
+bash analysis/scripts/run-texture.sh
+```
+
+- Scenes: `tiles_plain.json`, `tiles_image.json`, `tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
+- The image is `textures/tiles_8x8.png`, 2048 x 2048, generated with the same tile count, grout width and colors as the procedural material
+- 300 iterations, depth 8, all toggles on, nearest-texel sampling
+- Run on 2026-09-27; three readings per row
+
+| Scene | Wall material | readings, ms/iteration | avg |
+|---|---|---|---|
+| tiles_plain | flat color | 39.38, 39.88, 39.55 | 39.60 |
+| tiles_image | image lookup | 39.56, 40.28, 39.44 | 39.76 |
+| tiles_procedural | computed tiles | 39.46, 40.15, 39.97 | 39.86 |
 
 ## Image comparisons
 
