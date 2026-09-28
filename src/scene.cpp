@@ -278,6 +278,19 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.hasRefractive = 1.0;
             newMaterial.indexOfRefraction = p["IOR"];
         }
+        // optional computed pattern for the base color; RGB is the tile color
+        if (p.contains("PROCEDURAL") && p["PROCEDURAL"] == "tiles")
+        {
+            newMaterial.procedural = PROC_TILES;
+            newMaterial.tileCount = p.value("TILES", 8.0f);
+            newMaterial.groutWidth = p.value("GROUT", 0.04f);
+            newMaterial.groutColor = glm::vec3(0.25f);
+            if (p.contains("GROUT_RGB"))
+            {
+                const auto& g = p["GROUT_RGB"];
+                newMaterial.groutColor = glm::vec3(g[0], g[1], g[2]);
+            }
+        }
         // optional image for the base color, any material type
         if (p.contains("TEXTURE"))
         {

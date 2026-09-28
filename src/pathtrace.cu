@@ -46,6 +46,9 @@
 // NaN origin cyan, genuine miss blue
 #define DEBUG_TERMINATION 0
 
+// TEXTURE_BILINEAR lives in interactions.h, next to sampleTexture, because
+// interactions.cu cannot see the defines in this file
+
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
 void checkCUDAErrorFn(const char* msg, const char* file, int line)
@@ -402,6 +405,9 @@ __global__ void shadeMaterial(
             // and scatterRay picks it up unchanged
             if (material.albedoTex >= 0) {
                 material.color = sampleTexture(texels, textures[material.albedoTex], intersection.uv);
+            }
+            else if (material.procedural == PROC_TILES) {
+                material.color = proceduralTiles(material, intersection.uv);
             }
             glm::vec3 materialColor = material.color;
 

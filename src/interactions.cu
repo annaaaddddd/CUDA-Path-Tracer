@@ -44,6 +44,19 @@ __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(
         + sin(around) * over * perpendicularDirection2;
 }
 
+// One texel by integer pixel coordinates, wrapping around the image on both axes
+__host__ __device__ glm::vec3 texelAt(
+    const glm::vec3* texels,
+    const TextureInfo& tex,
+    int x,
+    int y)
+{
+    // % keeps the sign of the left operand, so add the size back before taking it again
+    x = ((x % tex.width) + tex.width) % tex.width;
+    y = ((y % tex.height) + tex.height) % tex.height;
+    return texels[tex.offset + y * tex.width + x];
+}
+
 __host__ __device__ glm::vec3 sampleTexture(
     const glm::vec3* texels,
     const TextureInfo& tex,
@@ -57,11 +70,53 @@ __host__ __device__ glm::vec3 sampleTexture(
     u = u - floor(u);
     v = v - floor(v);
 
-    // nearest texel: scale to pixel coordinates, then index this image's slice
-    int x = floor(u * tex.width);
-    int y = floor(v * tex.height);
+#if TEXTURE_BILINEAR
+    // texel centers sit at half-integer pixel coordinates, so shift by half a texel
+    // to make "exactly on a center" come out as a whole number
+    float fx = u * tex.width - 0.5f;
+    float fy = v * tex.height - 0.5f;
 
-    return texels[tex.offset + y * tex.width + x];
+    // the texel up and to the left of the sample point; floor, not a cast, because
+    // fx can be negative along the left and top edges
+    int x0 = (int)floor(fx);
+    int y0 = (int)floor(fy);
+
+    // how far the sample sits from that texel toward the next one, 0 to 1
+    float tx = fx - x0;
+    float ty = fy - y0;
+
+    glm::vec3 topL = texelAt(texels, tex, x0, y0);
+    glm::vec3 topR = texelAt(texels, tex, x0 + 1, y0);
+    glm::vec3 lowL = texelAt(texels, tex, x0, y0 + 1);
+    glm::vec3 lowR = texelAt(texels, tex, x0 + 1, y0 + 1);
+
+    // blend left to right on both rows, then top to bottom
+    glm::vec3 top = glm::mix(topL, topR, tx);
+    glm::vec3 low = glm::mix(lowL, lowR, tx);
+    return glm::mix(top, low, ty);
+#else
+    // nearest texel: scale to pixel coordinates, then index this image's slice
+    return texelAt(texels, tex, (int)floor(u * tex.width), (int)floor(v * tex.height));
+#endif
+}
+
+__host__ __device__ glm::vec3 proceduralTiles(
+    const Material& m,
+    glm::vec2 uv)
+{
+    // every integer cell of the scaled uv is one tile; the fractional part is the
+    // position inside the current tile, 0 to 1 on both axes
+    glm::vec2 cell = uv * m.tileCount;
+    cell = cell - glm::floor(cell);
+
+    // distance to the nearest tile edge on each axis, 0 on an edge and 0.5 at the center
+    float du = glm::min(cell.x, 1.0f - cell.x);
+    float dv = glm::min(cell.y, 1.0f - cell.y);
+
+    // a grout line straddles two tiles, so each tile owns half of its width
+    float halfGrout = 0.5f * m.groutWidth;
+    if (du < halfGrout || dv < halfGrout) return m.groutColor;
+    return m.color;
 }
 
 // Schlick approximation of the Fresnel reflectance for a dielectric

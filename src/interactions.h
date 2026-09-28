@@ -6,12 +6,23 @@
 
 #include <thrust/random.h>
 
+// Blend the four texels around the sample point instead of taking the nearest one
+#define TEXTURE_BILINEAR 1
+
 /**
- * Looks up the color of texture `tex` at `uv` with nearest-texel sampling
+ * Looks up the color of texture `tex` at `uv`, nearest texel or bilinear
+ * depending on TEXTURE_BILINEAR
  */
 __host__ __device__ glm::vec3 sampleTexture(
     const glm::vec3* texels,
     const TextureInfo& tex,
+    glm::vec2 uv);
+
+/**
+ * Computes a tile-and-grout pattern at `uv` from the material's tile parameters
+ */
+__host__ __device__ glm::vec3 proceduralTiles(
+    const Material& m,
     glm::vec2 uv);
 
 // CHECKITOUT

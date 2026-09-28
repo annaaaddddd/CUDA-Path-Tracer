@@ -39,6 +39,13 @@ struct Geom
     glm::vec3 aabbMax;
 };
 
+// Procedural patterns a material can compute from uv instead of reading an image
+enum ProceduralType
+{
+    PROC_NONE,
+    PROC_TILES
+};
+
 struct Material
 {
     glm::vec3 color;
@@ -51,7 +58,11 @@ struct Material
     float hasRefractive;
     float indexOfRefraction;
     float emittance;
-    int albedoTex;   // index into the texture table, -1 when the material has no image
+    int albedoTex;        // index into the texture table, -1 when the material has no image
+    int procedural;       // a ProceduralType, PROC_NONE when the color is not computed
+    float tileCount;      // PROC_TILES: tiles across one unit of uv
+    float groutWidth;     // PROC_TILES: grout thickness as a fraction of one tile
+    glm::vec3 groutColor; // PROC_TILES: color of the lines between tiles
 };
 
 // One loaded image, stored as a slice of the shared texel array
