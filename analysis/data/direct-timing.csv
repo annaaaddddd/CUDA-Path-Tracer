@@ -1,0 +1,13 @@
+scene,direct_lighting,ms_per_iter,fps
+small_light_depth2,1,20.28,49.3
+small_light_depth2,1,19.90,50.2
+small_light_depth2,1,20.14,49.7
+small_light_depth8,1,45.41,22.0
+small_light_depth8,1,45.58,21.9
+small_light_depth8,1,44.74,22.4
+small_light_depth2,0,20.79,48.1
+small_light_depth2,0,20.14,49.7
+small_light_depth2,0,20.25,49.4
+small_light_depth8,0,45.24,22.1
+small_light_depth8,0,44.62,22.4
+small_light_depth8,0,44.24,22.6
