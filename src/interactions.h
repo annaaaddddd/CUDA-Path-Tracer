@@ -45,6 +45,20 @@ __host__ __device__ glm::vec3 bumpNormal(
     const Material& m,
     glm::vec2 uv);
 
+/**
+ * Picks a point uniformly by area on the surface of an emissive box
+ *
+ * @param point   Output parameter, world-space position on the light
+ * @param normal  Output parameter, outward normal of the light at that point
+ * @param area    Output parameter, total surface area of the box, world units
+ */
+__host__ __device__ void sampleBoxLight(
+    const Geom& light,
+    thrust::default_random_engine& rng,
+    glm::vec3& point,
+    glm::vec3& normal,
+    float& area);
+
 // CHECKITOUT
 /**
  * Computes a cosine-weighted random direction in a hemisphere.

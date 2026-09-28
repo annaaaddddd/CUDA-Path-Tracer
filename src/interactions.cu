@@ -161,6 +161,38 @@ __host__ __device__ glm::vec3 bumpNormal(
     return glm::normalize(normal - m.bumpStrength * (hu * T + hv * B));
 }
 
+__host__ __device__ void sampleBoxLight(
+    const Geom& light,
+    thrust::default_random_engine& rng,
+    glm::vec3& point,
+    glm::vec3& normal,
+    float& area)
+{
+    thrust::uniform_real_distribution<float> u01(0, 1);
+
+    // areas of the three pairs of faces; rotation does not change an area, so the
+    // scale alone gives them
+    glm::vec3 s = glm::abs(light.scale);
+    float ax = s.y * s.z;   // the two faces across x
+    float ay = s.x * s.z;
+    float az = s.x * s.y;
+    area = 2.0f * (ax + ay + az);
+
+    // pick the axis in proportion to its faces' area, then one of its two faces
+    float pick = u01(rng) * (ax + ay + az);
+    int axis = pick < ax ? 0 : (pick < ax + ay ? 1 : 2);
+    float side = u01(rng) < 0.5f ? -0.5f : 0.5f;
+
+    // uniform point on that face of the unit cube, which spans -0.5 to 0.5
+    glm::vec3 p(u01(rng) - 0.5f, u01(rng) - 0.5f, u01(rng) - 0.5f);
+    p[axis] = side;
+    glm::vec3 n(0.0f);
+    n[axis] = side > 0.0f ? 1.0f : -1.0f;
+
+    point = glm::vec3(light.transform * glm::vec4(p, 1.0f));
+    normal = glm::normalize(glm::vec3(light.invTranspose * glm::vec4(n, 0.0f)));
+}
+
 // Schlick approximation of the Fresnel reflectance for a dielectric
 // cosTheta is the cosine between the incoming ray and the normal facing it
 __host__ __device__ float schlickFresnel(float cosTheta, float ior)

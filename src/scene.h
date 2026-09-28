@@ -18,4 +18,5 @@ public:
     std::vector<Triangle> triangles;
     std::vector<glm::vec3> texels;        // every image's pixels, back to back
     std::vector<TextureInfo> textures;    // where each image sits inside texels
+    std::vector<int> lights;              // indices into geoms of every emissive box
 };

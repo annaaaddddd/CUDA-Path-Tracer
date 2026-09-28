@@ -334,6 +334,11 @@ void Scene::loadFromJSON(const std::string& jsonName)
             loadGLTF(sceneDir + p["FILE"].get<std::string>(), newGeom);
         }
 
+        // direct lighting samples points on emissive boxes, so remember where they are
+        if (newGeom.type == CUBE && materials[newGeom.materialid].emittance > 0.0f)
+        {
+            lights.push_back((int)geoms.size());
+        }
         geoms.push_back(newGeom);
     }
     const auto& cameraData = data["Camera"];

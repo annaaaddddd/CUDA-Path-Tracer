@@ -36,6 +36,9 @@
 // Skip a mesh's triangle loop when the ray misses its bounding box
 #define MESH_AABB_CULL 1
 
+// Aim the last ray of a path at a random point on a light instead of a random direction
+#define DIRECT_LIGHTING 1
+
 // Debug view: paint the first hit with its normal mapped to [0,1] instead of shading
 #define DEBUG_NORMALS 0
 
@@ -120,6 +123,7 @@ static PathSegment* dev_paths = NULL;
 static ShadeableIntersection* dev_intersections = NULL;
 static glm::vec3* dev_texels = NULL;
 static TextureInfo* dev_textures = NULL;
+static int* dev_lights = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -159,6 +163,9 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_textures, scene->textures.size() * sizeof(TextureInfo));
     cudaMemcpy(dev_textures, scene->textures.data(), scene->textures.size() * sizeof(TextureInfo), cudaMemcpyHostToDevice);
 
+    cudaMalloc(&dev_lights, scene->lights.size() * sizeof(int));
+    cudaMemcpy(dev_lights, scene->lights.data(), scene->lights.size() * sizeof(int), cudaMemcpyHostToDevice);
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -173,6 +180,7 @@ void pathtraceFree()
     // TODO: clean up any extra device memory you created
     cudaFree(dev_texels);
     cudaFree(dev_textures);
+    cudaFree(dev_lights);
 
     checkCUDAError("pathtraceFree");
 }
@@ -390,7 +398,10 @@ __global__ void shadeMaterial(
     PathSegment* pathSegments,
     Material* materials,
     glm::vec3* texels,
-    TextureInfo* textures)
+    TextureInfo* textures,
+    Geom* geoms,
+    int* lights,
+    int num_lights)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < num_paths)
@@ -448,8 +459,59 @@ __global__ void shadeMaterial(
             // Otherwise, do BSDF lighting computation
             else {
                 glm::vec3 intersect = getPointOnRay(pathSegments[idx].ray, intersection.t);
-                scatterRay(pathSegments[idx], intersect, intersection.surfaceNormal, geomNormal, material, rng);
+                bool aimedAtLight = false;
+
+#if DIRECT_LIGHTING
+                // a path is cut off when remainingBounces reaches 0, and it is decremented
+                // below, so the ray made here is the last one traced when 2 remain now
+                bool lastRay = pathSegments[idx].remainingBounces == 2;
+                bool diffuse = material.hasReflective <= 0 && material.hasRefractive <= 0;
+                if (lastRay && diffuse && num_lights > 0)
+                {
+                    aimedAtLight = true;
+
+                    // one light uniformly, then one point on it uniformly by area
+                    int pick = glm::min((int)(u01(rng) * num_lights), num_lights - 1);
+                    glm::vec3 lightPoint, lightNormal;
+                    float lightArea;
+                    sampleBoxLight(geoms[lights[pick]], rng, lightPoint, lightNormal, lightArea);
+
+                    // unit direction from the hit to the light point, and the distance
+                    glm::vec3 toLight = lightPoint - intersect;
+                    float dist = glm::length(toLight);
+                    toLight = glm::normalize(toLight);
+
+                    // the dot product of two unit vectors is the cosine of their angle
+                    // how squarely the surface faces the light, and the light faces the surface
+                    float cosSurface = glm::dot(toLight, intersection.surfaceNormal);
+                    float cosLight = glm::dot(-toLight, lightNormal);
+
+                    if (cosSurface <= 0.0f || cosLight <= 0.0f || glm::dot(toLight, geomNormal) <= 0.0f)
+                    {
+                        // the sampled point faces away, or sits behind the surface
+                        pathSegments[idx].color = glm::vec3(0.0f);
+                    }
+                    else
+                    {
+                        // the weight of aiming at this point instead of a random direction
+                        //     albedo / PI                   the diffuse BSDF
+                        //     cosSurface                    light arriving at a slant
+                        //     cosLight / dist^2             how small the light patch looks from here
+                        //     lightArea * num_lights        one over the probability of this point
+                        float weight = cosSurface * cosLight / (dist * dist) * lightArea * (float)num_lights / PI;
+                        pathSegments[idx].color *= material.color * weight;
+                    }
+                    pathSegments[idx].ray.direction = toLight;
+                    pathSegments[idx].ray.origin = intersect + 0.001f * toLight;
+                }
+#endif
+
+                if (!aimedAtLight)
+                {
+                    scatterRay(pathSegments[idx], intersect, intersection.surfaceNormal, geomNormal, material, rng);
+                }
                 pathSegments[idx].remainingBounces--;
+
 #if DEBUG_TERMINATION
                 if (pathSegments[idx].remainingBounces == 0) pathSegments[idx].color = glm::vec3(1.0f, 0.0f, 0.0f);
 #else
@@ -611,7 +673,10 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_paths,
             dev_materials,
             dev_texels,
-            dev_textures
+            dev_textures,
+            dev_geoms,
+            dev_lights,
+            (int)hst_scene->lights.size()
         );
 
 #if STREAM_COMPACTION
