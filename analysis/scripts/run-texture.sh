@@ -13,8 +13,8 @@ mkdir -p analysis/logs
 echo "scene,ms_per_iter,fps" > analysis/data/texture-timing.csv
 
 for scene in "${SCENES[@]}"; do
-    tmp="scenes/tmp_$scene.json"
-    sed -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\": $ITERS/; s/\"FILE\": *\"[^\"]+\"/\"FILE\": \"tmp_$scene\"/" "scenes/$scene.json" > "$tmp"
+    tmp="scenes/texture/tmp_$scene.json"
+    sed -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\": $ITERS/; s/\"FILE\": *\"[^\"]+\"/\"FILE\": \"tmp_$scene\"/" "scenes/texture/$scene.json" > "$tmp"
 
     log="analysis/logs/texture-$scene.log"
     echo "=== $scene ==="

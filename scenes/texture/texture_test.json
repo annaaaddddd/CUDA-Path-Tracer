@@ -26,7 +26,7 @@
         {
             "TYPE":"Diffuse",
             "RGB":[0.98, 0.98, 0.98],
-            "TEXTURE":"textures/uv_checker.png"
+            "TEXTURE":"../textures/uv_checker.png"
         },
         "specular_white":
         {
@@ -41,20 +41,13 @@
         "FOVY":45.0,
         "ITERATIONS":5000,
         "DEPTH":8,
-        "FILE":"texture_closeup",
+        "FILE":"texture_test",
         "EYE":[0.0,5.0,10.5],
         "LOOKAT":[0.0,5.0,0.0],
         "UP":[0.0,1.0,0.0]
     },
     "Objects":
     [
-        {
-            "TYPE":"cube",
-            "MATERIAL":"light",
-            "TRANS":[0.0,9.5,8.0],
-            "ROTAT":[0.0,0.0,0.0],
-            "SCALE":[6.0,0.3,3.0]
-        },
         {
             "TYPE":"cube",
             "MATERIAL":"light",
@@ -100,17 +93,17 @@
         {
             "TYPE":"cube",
             "MATERIAL":"checker",
-            "TRANS":[-2.3,2.6,1.0],
+            "TRANS":[-2.0,1.5,-1.0],
             "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[3.2,3.2,3.2]
+            "SCALE":[1.5,1.5,1.5]
         },
         {
             "TYPE":"mesh",
-            "FILE":"models/cube_upright.gltf",
+            "FILE":"../models/cube_upright.gltf",
             "MATERIAL":"checker",
-            "TRANS":[2.3,2.6,1.0],
+            "TRANS":[2.0,1.5,-1.0],
             "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[1.6,1.6,1.6]
+            "SCALE":[0.75,0.75,0.75]
         }
     ]
 }

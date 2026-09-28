@@ -15,8 +15,8 @@ echo "scene,depth,ms_per_iter,fps" > analysis/data/depth-timing.csv
 
 for scene in "${SCENES[@]}"; do
     for depth in "${DEPTHS[@]}"; do
-        tmp="scenes/tmp_${scene}_d$depth.json"
-        sed -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/; s/\"DEPTH\": *[0-9]+/\"DEPTH\":$depth/; s/\"FILE\":\"[^\"]+\"/\"FILE\":\"tmp_${scene}_d$depth\"/" "scenes/$scene.json" > "$tmp"
+        tmp="scenes/refraction/tmp_${scene}_d$depth.json"
+        sed -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/; s/\"DEPTH\": *[0-9]+/\"DEPTH\":$depth/; s/\"FILE\":\"[^\"]+\"/\"FILE\":\"tmp_${scene}_d$depth\"/" "scenes/refraction/$scene.json" > "$tmp"
 
         log="analysis/logs/depth-$scene-$depth.log"
         echo "=== $scene, depth $depth ==="

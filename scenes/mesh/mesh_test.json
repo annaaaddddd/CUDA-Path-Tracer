@@ -22,12 +22,6 @@
             "TYPE":"Diffuse",
             "RGB":[0.35, 0.85, 0.35]
         },
-        "checker":
-        {
-            "TYPE":"Diffuse",
-            "RGB":[0.98, 0.98, 0.98],
-            "TEXTURE":"textures/uv_checker.png"
-        },
         "specular_white":
         {
             "TYPE":"Specular",
@@ -41,7 +35,7 @@
         "FOVY":45.0,
         "ITERATIONS":5000,
         "DEPTH":8,
-        "FILE":"texture_test",
+        "FILE":"mesh_test",
         "EYE":[0.0,5.0,10.5],
         "LOOKAT":[0.0,5.0,0.0],
         "UP":[0.0,1.0,0.0]
@@ -92,15 +86,15 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"checker",
+            "MATERIAL":"diffuse_white",
             "TRANS":[-2.0,1.5,-1.0],
             "ROTAT":[0.0,30.0,0.0],
             "SCALE":[1.5,1.5,1.5]
         },
         {
             "TYPE":"mesh",
-            "FILE":"models/cube_upright.gltf",
-            "MATERIAL":"checker",
+            "FILE":"../models/cube.gltf",
+            "MATERIAL":"diffuse_white",
             "TRANS":[2.0,1.5,-1.0],
             "ROTAT":[0.0,30.0,0.0],
             "SCALE":[0.75,0.75,0.75]

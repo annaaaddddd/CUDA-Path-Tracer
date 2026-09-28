@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 
 SRC=src/pathtrace.cu
 EXE=build/bin/Release/cis565_path_tracer.exe
-SCENE=scenes/suzanne.json
+SCENE=scenes/mesh/suzanne.json
 MODELS=(suzanne_4k suzanne_16k)
 ITERS=100
 
@@ -26,7 +26,7 @@ echo "model,triangles,aabb_cull,ms_per_iter,fps" > analysis/data/aabb-timing.csv
 
 sed -i -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/" "$SCENE"
 for m in "${MODELS[@]}"; do
-    sed -i -E "s|\"FILE\":\"models/[^\"]+\.gltf\"|\"FILE\":\"models/$m.gltf\"|" "$SCENE"
+    sed -i -E "s|\"FILE\":\"\.\./models/[^\"]+\.gltf\"|\"FILE\":\"../models/$m.gltf\"|" "$SCENE"
     for c in 1 0; do
         sed -i -E "s/^(#define MESH_AABB_CULL) +[0-9]+/\1 $c/" "$SRC"
         cmake --build build --config Release > /dev/null

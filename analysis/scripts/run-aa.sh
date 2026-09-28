@@ -28,7 +28,7 @@ run() {  # name sort aa
 
     log="analysis/logs/aa-$1.log"
     echo "=== $1 (sort=$2, aa=$3) ==="
-    "$EXE" scenes/cornell.json | tee "$log"
+    "$EXE" scenes/core/cornell.json | tee "$log"
     mv -f cornell.*samp.png "build/aa-$1-5000samp.png" 2>/dev/null || true
     awk -v n="$1" -v s="$2" -v a="$3" '/ms\/iteration/ {
         gsub(/[()]/,""); print n","s","a","$5","$7 >> "analysis/data/aa-timing.csv" }' "$log"

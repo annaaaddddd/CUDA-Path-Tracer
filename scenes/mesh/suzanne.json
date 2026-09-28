@@ -22,20 +22,6 @@
             "TYPE":"Diffuse",
             "RGB":[0.35, 0.85, 0.35]
         },
-        "tiles":
-        {
-            "TYPE":"Diffuse",
-            "RGB":[0.90, 0.90, 0.86],
-            "PROCEDURAL":"tiles",
-            "TILES":4,
-            "GROUT":0.06
-        },
-        "checker":
-        {
-            "TYPE":"Diffuse",
-            "RGB":[0.98, 0.98, 0.98],
-            "TEXTURE":"textures/uv_checker.png"
-        },
         "specular_white":
         {
             "TYPE":"Specular",
@@ -49,7 +35,7 @@
         "FOVY":45.0,
         "ITERATIONS":5000,
         "DEPTH":8,
-        "FILE":"procedural_test",
+        "FILE":"suzanne",
         "EYE":[0.0,5.0,10.5],
         "LOOKAT":[0.0,5.0,0.0],
         "UP":[0.0,1.0,0.0]
@@ -99,19 +85,12 @@
             "SCALE":[0.01,10.0,10.0]
         },
         {
-            "TYPE":"cube",
-            "MATERIAL":"tiles",
-            "TRANS":[-2.0,1.5,-1.0],
-            "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[1.5,1.5,1.5]
-        },
-        {
             "TYPE":"mesh",
-            "FILE":"models/cube_upright.gltf",
-            "MATERIAL":"checker",
-            "TRANS":[2.0,1.5,-1.0],
-            "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[0.75,0.75,0.75]
+            "FILE":"../models/suzanne_16k.gltf",
+            "MATERIAL":"diffuse_white",
+            "TRANS":[0.0,3.0,0.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[1.8,1.8,1.8]
         }
     ]
 }

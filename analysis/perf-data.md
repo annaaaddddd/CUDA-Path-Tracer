@@ -27,7 +27,7 @@ Every script runs from the repo root, writes a CSV to `analysis/data/` and the r
 bash analysis/scripts/run-perf.sh
 ```
 
-- Scenes: `cornell.json` (open), `cornell_closed.json` (closed)
+- Scenes: `core/cornell.json` (open), `core/cornell_closed.json` (closed)
 - 5000 iterations, depth 8, sorting off, anti-aliasing off
 - Run on 2026-09-22; 50 readings per row
 
@@ -64,7 +64,7 @@ Note: an earlier 500-iteration pass of the same four runs agreed to within a few
 bash analysis/scripts/run-aa.sh
 ```
 
-- Scene: `cornell.json`, 5000 iterations, depth 8, compaction on in every row
+- Scene: `core/cornell.json`, 5000 iterations, depth 8, compaction on in every row
 - Run on 2026-09-22; 50 readings per row
 - The baseline row is the open, compaction-on row of the sweep above
 
@@ -84,7 +84,7 @@ Note: a first all-on measurement read 40.5 - 45.9 ms. Two later runs of the same
 bash analysis/scripts/run-aabb.sh
 ```
 
-- Scene: `suzanne.json` with `models/suzanne_4k.gltf` and `models/suzanne_16k.gltf`
+- Scene: `mesh/suzanne.json` with `suzanne_4k.gltf` and `suzanne_16k.gltf` from `scenes/models/`
 - 100 iterations, depth 8, compaction, sorting and anti-aliasing on
 - Toggle: `MESH_AABB_CULL`
 - Run on 2026-09-25; one reading per row
@@ -104,7 +104,7 @@ Note: a longer manual run of the 16k model with culling off drifted from 843 to 
 bash analysis/scripts/run-refraction.sh
 ```
 
-- Scenes: `cornell.json` and `glass_open.json`, `cornell_closed.json` and `glass_closed.json`. Each pair differs only in the sphere's material
+- Scenes: `core/cornell.json` and `refraction/glass_open.json`, `core/cornell_closed.json` and `refraction/glass_closed.json`. Each pair differs only in the sphere's material
 - 300 iterations, depth 8, all toggles on
 - Run on 2026-09-26; three readings per row
 
@@ -121,7 +121,7 @@ bash analysis/scripts/run-refraction.sh
 bash analysis/scripts/run-depth.sh
 ```
 
-- Scenes: `glass_open.json`, `glass_closed.json`, with `DEPTH` overridden
+- Scenes: `refraction/glass_open.json`, `refraction/glass_closed.json`, with `DEPTH` overridden
 - 300 iterations, all toggles on
 - Run on 2026-09-26; three readings per row
 
@@ -138,8 +138,8 @@ bash analysis/scripts/run-depth.sh
 bash analysis/scripts/run-texture.sh
 ```
 
-- Scenes: `tiles_plain.json`, `tiles_image.json`, `tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
-- The image is `textures/tiles_8x8.png`, 2048 x 2048, generated with the same tile count, grout width and colors as the procedural material
+- Scenes: `texture/tiles_plain.json`, `texture/tiles_image.json`, `texture/tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
+- The image is `scenes/textures/tiles_8x8.png`, 2048 x 2048, generated with the same tile count, grout width and colors as the procedural material
 - 300 iterations, depth 8, all toggles on, nearest-texel sampling
 - Run on 2026-09-27; three readings per row
 

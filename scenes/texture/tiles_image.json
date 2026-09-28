@@ -49,7 +49,7 @@
                 0.9,
                 0.86
             ],
-            "TEXTURE": "textures/tiles_8x8.png"
+            "TEXTURE": "../textures/tiles_8x8.png"
         }
     },
     "Camera": {

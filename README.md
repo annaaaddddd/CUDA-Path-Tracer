@@ -121,7 +121,7 @@ The balance should flip once per-ray work gets expensive, as it does with meshes
 
 #### Open versus closed scene
 
-`scenes/cornell_closed.json` is the same room with a wall across the open front at z=+5 and the camera moved inside to sit just in front of it, so nothing can leave the scene.
+`scenes/core/cornell_closed.json` is the same room with a wall across the open front at z=+5 and the camera moved inside to sit just in front of it, so nothing can leave the scene.
 
 ![](img/cornell_closed_5000samp.png)
 
@@ -441,7 +441,7 @@ Not a code bug. Blender's default cube spans -1 to 1 and this renderer's native 
 
 ```powershell
 cmake --build build --config Release
-& ".\build\bin\Release\cis565_path_tracer.exe" "scenes/cornell.json"
+& ".\build\bin\Release\cis565_path_tracer.exe" "scenes/core/cornell.json"
 ```
 
 - Esc saves the image and exits

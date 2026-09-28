@@ -13,11 +13,11 @@ ITERS=5000
 
 BAK=$(mktemp -d)
 cp "$SRC" "$BAK/"
-for s in "${SCENES[@]}"; do cp "scenes/$s.json" "$BAK/"; done
+for s in "${SCENES[@]}"; do cp "scenes/core/$s.json" "$BAK/"; done
 
 restore() {
     { cat "$BAK/pathtrace.cu" > "$SRC"
-      for s in "${SCENES[@]}"; do cat "$BAK/$s.json" > "scenes/$s.json"; done
+      for s in "${SCENES[@]}"; do cat "$BAK/$s.json" > "scenes/core/$s.json"; done
       rm -rf "$BAK"
     } || echo "WARNING: restore incomplete, originals kept in $BAK" >&2
 }
@@ -28,7 +28,7 @@ echo "scene,compaction,bounce,paths_alive" > analysis/data/paths.csv
 echo "scene,compaction,ms_per_iter,fps"    > analysis/data/timing.csv
 
 for s in "${SCENES[@]}"; do
-    sed -i -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/" "scenes/$s.json"
+    sed -i -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/" "scenes/core/$s.json"
     for c in 1 0; do
         sed -i -E "s/^(#define STREAM_COMPACTION) +[0-9]+/\1 $c/;
                    s/^(#define SORT_BY_MATERIAL) +[0-9]+/\1 0/;
@@ -37,7 +37,7 @@ for s in "${SCENES[@]}"; do
 
         log="analysis/logs/$s-compaction-$c.log"
         echo "=== $s, compaction=$c ==="
-        "$EXE" "scenes/$s.json" | tee "$log"
+        "$EXE" "scenes/core/$s.json" | tee "$log"
         mv -f "$s".*samp.png "build/$s-compaction-$c-${ITERS}samp.png" 2>/dev/null || true
         awk -v s="$s" -v c="$c" '
             /bounce [0-9]+:/ { print s","c","$3+0","$4 >> "analysis/data/paths.csv" }

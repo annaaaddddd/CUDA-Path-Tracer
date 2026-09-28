@@ -22,11 +22,17 @@
             "TYPE":"Diffuse",
             "RGB":[0.35, 0.85, 0.35]
         },
-        "glass":
+        "checker":
         {
-            "TYPE":"Refractive",
+            "TYPE":"Diffuse",
             "RGB":[0.98, 0.98, 0.98],
-            "IOR":1.5
+            "TEXTURE":"../textures/tiny_8x8.png"
+        },
+        "specular_white":
+        {
+            "TYPE":"Specular",
+            "RGB":[0.98, 0.98, 0.98],
+            "ROUGHNESS":0.0
         }
     },
     "Camera":
@@ -34,14 +40,21 @@
         "RES":[800,800],
         "FOVY":45.0,
         "ITERATIONS":5000,
-        "DEPTH":32,
-        "FILE":"mesh_glass",
+        "DEPTH":8,
+        "FILE":"texture_filter",
         "EYE":[0.0,5.0,10.5],
         "LOOKAT":[0.0,5.0,0.0],
         "UP":[0.0,1.0,0.0]
     },
     "Objects":
     [
+        {
+            "TYPE":"cube",
+            "MATERIAL":"light",
+            "TRANS":[0.0,9.5,8.0],
+            "ROTAT":[0.0,0.0,0.0],
+            "SCALE":[6.0,0.3,3.0]
+        },
         {
             "TYPE":"cube",
             "MATERIAL":"light",
@@ -86,18 +99,18 @@
         },
         {
             "TYPE":"cube",
-            "MATERIAL":"glass",
-            "TRANS":[-2.0,1.5,-1.0],
+            "MATERIAL":"checker",
+            "TRANS":[-2.3,2.6,1.0],
             "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[1.5,1.5,1.5]
+            "SCALE":[3.2,3.2,3.2]
         },
         {
             "TYPE":"mesh",
-            "FILE":"models/cube.gltf",
-            "MATERIAL":"glass",
-            "TRANS":[2.0,1.5,-1.0],
+            "FILE":"../models/cube_upright.gltf",
+            "MATERIAL":"checker",
+            "TRANS":[2.3,2.6,1.0],
             "ROTAT":[0.0,30.0,0.0],
-            "SCALE":[0.75,0.75,0.75]
+            "SCALE":[1.6,1.6,1.6]
         }
     ]
 }
