@@ -42,6 +42,11 @@
 // Debug view: paint the first hit with its uv as (u, v, 0) instead of shading
 #define DEBUG_UV 0
 
+// Debug view: paint the first hit with its tangent mapped to [0,1] instead of shading
+#define DEBUG_TANGENT 0
+// Debug view: paint the first hit with its bumped normal mapped to [0,1]
+#define DEBUG_BUMP 0
+
 // Debug view: paint each path by how it ended, depth exhausted red, NaN direction green,
 // NaN origin cyan, genuine miss blue
 #define DEBUG_TERMINATION 0
@@ -236,6 +241,7 @@ __global__ void computeIntersections(
         glm::vec3 intersect_point;
         glm::vec3 normal;
         glm::vec2 uv;
+        glm::vec3 tangent;
         float t_min = FLT_MAX;
         int hit_geom_index = -1;
         bool outside = true;
@@ -243,6 +249,7 @@ __global__ void computeIntersections(
         glm::vec3 tmp_intersect;
         glm::vec3 tmp_normal;
         glm::vec2 tmp_uv;
+        glm::vec3 tmp_tangent;
 
         // naive parse through global geoms
 
@@ -254,12 +261,14 @@ __global__ void computeIntersections(
 
             if (geom.type == CUBE)
             {
-                t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, tmp_uv, outside);
+                t = boxIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, tmp_uv, tmp_tangent, outside);
             }
             else if (geom.type == SPHERE)
             {
                 t = sphereIntersectionTest(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
                 tmp_uv = glm::vec2(0.0, 0.0);
+                // no uvs on the sphere yet, so any direction perpendicular to the normal
+                tmp_tangent = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), tmp_normal) + glm::vec3(1e-6f, 0.0f, 0.0f));
             }
             else if (geom.type == MESH)
             {
@@ -274,14 +283,16 @@ __global__ void computeIntersections(
                     glm::vec3 triPoint;
                     glm::vec3 triNormal;
                     glm::vec2 triUV;
+                    glm::vec3 triTangent;
                     bool triOutside;
-                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triUV, triOutside);
+                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triUV, triTangent, triOutside);
                     if (tt > 0.0f && tt < meshT)
                     {
                         meshT = tt;
                         tmp_intersect = triPoint;
                         tmp_normal = triNormal;
                         tmp_uv = triUV;
+                        tmp_tangent = triTangent;
                         outside = triOutside;
                     }
                 }
@@ -298,6 +309,7 @@ __global__ void computeIntersections(
                 intersect_point = tmp_intersect;
                 normal = tmp_normal;
                 uv = tmp_uv;
+                tangent = tmp_tangent;
             }
         }
 
@@ -312,6 +324,7 @@ __global__ void computeIntersections(
             intersections[path_index].materialId = geoms[hit_geom_index].materialid;
             intersections[path_index].surfaceNormal = normal;
             intersections[path_index].uv = uv;
+            intersections[path_index].tangent = tangent;
         }
     }
 }
@@ -396,6 +409,11 @@ __global__ void shadeMaterial(
             pathSegments[idx].remainingBounces = 0;
             return;
 #endif
+#if DEBUG_TANGENT
+            pathSegments[idx].color = intersection.tangent * 0.5f + 0.5f;
+            pathSegments[idx].remainingBounces = 0;
+            return;
+#endif
             // Set up the RNG
             thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, pathSegments[idx].remainingBounces);
             thrust::uniform_real_distribution<float> u01(0, 1);
@@ -409,6 +427,16 @@ __global__ void shadeMaterial(
             else if (material.procedural == PROC_TILES) {
                 material.color = proceduralTiles(material, intersection.uv);
             }
+            // keep the real surface normal; bump only changes the one used for shading
+            glm::vec3 geomNormal = intersection.surfaceNormal;
+            if (material.bumpStrength > 0.0f && material.procedural == PROC_TILES) {
+                intersection.surfaceNormal = bumpNormal(intersection.surfaceNormal, intersection.tangent, material, intersection.uv);
+            }
+#if DEBUG_BUMP
+            pathSegments[idx].color = intersection.surfaceNormal * 0.5f + 0.5f;
+            pathSegments[idx].remainingBounces = 0;
+            return;
+#endif
             glm::vec3 materialColor = material.color;
 
             // If the material indicates that the object was a light, "light" the ray
@@ -420,7 +448,7 @@ __global__ void shadeMaterial(
             // Otherwise, do BSDF lighting computation
             else {
                 glm::vec3 intersect = getPointOnRay(pathSegments[idx].ray, intersection.t);
-                scatterRay(pathSegments[idx], intersect, intersection.surfaceNormal, material, rng);
+                scatterRay(pathSegments[idx], intersect, intersection.surfaceNormal, geomNormal, material, rng);
                 pathSegments[idx].remainingBounces--;
 #if DEBUG_TERMINATION
                 if (pathSegments[idx].remainingBounces == 0) pathSegments[idx].color = glm::vec3(1.0f, 0.0f, 0.0f);

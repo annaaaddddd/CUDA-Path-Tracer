@@ -63,6 +63,7 @@ struct Material
     float tileCount;      // PROC_TILES: tiles across one unit of uv
     float groutWidth;     // PROC_TILES: grout thickness as a fraction of one tile
     glm::vec3 groutColor; // PROC_TILES: color of the lines between tiles
+    float bumpStrength;   // how hard the height pattern tilts the normal, 0 turns bump off
 };
 
 // One loaded image, stored as a slice of the shared texel array
@@ -111,6 +112,7 @@ struct ShadeableIntersection
   glm::vec3 surfaceNormal;
   int materialId;
   glm::vec2 uv;
+  glm::vec3 tangent;   // world-space direction in which u increases across the surface
 };
 
 

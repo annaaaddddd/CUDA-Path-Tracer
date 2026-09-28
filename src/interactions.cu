@@ -119,6 +119,48 @@ __host__ __device__ glm::vec3 proceduralTiles(
     return m.color;
 }
 
+__host__ __device__ float proceduralTilesHeight(
+    const Material& m,
+    glm::vec2 uv)
+{
+    // same first two steps as proceduralTiles: position inside the tile, then
+    // distance to the nearest edge on each axis
+    glm::vec2 cell = uv * m.tileCount;
+    cell = cell - glm::floor(cell);
+    float du = glm::min(cell.x, 1.0f - cell.x);
+    float dv = glm::min(cell.y, 1.0f - cell.y);
+    float d = glm::min(du, dv);
+
+    // flat at 0 inside the grout, flat at 1 on the tile, a smooth ramp half a grout
+    // wide between them; a hard step would have no slope for bumpNormal to measure
+    float halfGrout = 0.5f * m.groutWidth;
+    return glm::smoothstep(halfGrout, 2.0f * halfGrout, d);
+}
+
+__host__ __device__ glm::vec3 bumpNormal(
+    glm::vec3 normal,
+    glm::vec3 tangent,
+    const Material& m,
+    glm::vec2 uv)
+{
+    // step in uv used to measure the slope; much smaller and u + step rounds back to u
+    const float uvStep = 0.001f;
+
+    // the interpolated normal and the tangent are not exactly perpendicular, so
+    // remove the part of the tangent that lies along the normal
+    glm::vec3 T = glm::normalize(tangent - glm::dot(tangent, normal) * normal);
+    // direction of increasing v; v runs down the image, so this is T x N
+    glm::vec3 B = glm::cross(T, normal);
+
+    // slope of the height along u and along v by finite differences
+    float h = proceduralTilesHeight(m, uv);
+    float hu = (proceduralTilesHeight(m, glm::vec2(uv.x + uvStep, uv.y)) - h) / uvStep;
+    float hv = (proceduralTilesHeight(m, glm::vec2(uv.x, uv.y + uvStep)) - h) / uvStep;
+
+    // tilt the normal away from the uphill direction
+    return glm::normalize(normal - m.bumpStrength * (hu * T + hv * B));
+}
+
 // Schlick approximation of the Fresnel reflectance for a dielectric
 // cosTheta is the cosine between the incoming ray and the normal facing it
 __host__ __device__ float schlickFresnel(float cosTheta, float ior)
@@ -132,10 +174,14 @@ __host__ __device__ void scatterRay(
     PathSegment& pathSegment,
     glm::vec3 intersect,
     glm::vec3 normal,
+    glm::vec3 geomNormal,
     const Material& m,
     thrust::default_random_engine& rng)
 {
     glm::vec3 newDir;
+    // `normal` may be bumped; `geomNormal` is the real surface, turned to face the ray
+    glm::vec3 incoming = pathSegment.ray.direction;
+    if (glm::dot(incoming, geomNormal) > 0) geomNormal = -geomNormal;
 
     if (m.hasReflective > 0) {
         // Perfect specular: mirror the incoming ray about the surface normal
@@ -180,6 +226,13 @@ __host__ __device__ void scatterRay(
         if (glm::dot(pathSegment.ray.direction, normal) > 0) normal = -normal;
         newDir = calculateRandomDirectionInHemisphere(normal, rng);
         pathSegment.color *= m.color;
+    }
+
+    // a bumped normal tilts the sampling hemisphere, so part of it dips under the
+    // real surface; mirror those directions back above it instead of losing them
+    // Glass is exempt, a refracted ray is supposed to cross the surface
+    if (m.hasRefractive <= 0 && glm::dot(newDir, geomNormal) < 0) {
+        newDir = glm::reflect(newDir, geomNormal);
     }
 
     pathSegment.ray.direction = normalize(newDir);

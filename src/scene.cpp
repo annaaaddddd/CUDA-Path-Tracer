@@ -291,6 +291,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
                 newMaterial.groutColor = glm::vec3(g[0], g[1], g[2]);
             }
         }
+        // optional bump strength; the height comes from the material's procedural pattern
+        newMaterial.bumpStrength = p.value("BUMP", 0.0f);
         // optional image for the base color, any material type
         if (p.contains("TEXTURE"))
         {

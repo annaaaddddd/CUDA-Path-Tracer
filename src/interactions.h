@@ -25,6 +25,26 @@ __host__ __device__ glm::vec3 proceduralTiles(
     const Material& m,
     glm::vec2 uv);
 
+/**
+ * Height of the tile pattern at `uv`: 1 on a tile, 0 at the bottom of the grout,
+ * with a short ramp between them
+ */
+__host__ __device__ float proceduralTilesHeight(
+    const Material& m,
+    glm::vec2 uv);
+
+/**
+ * Tilts the shading normal by the slope of the material's height pattern
+ *
+ * @param normal   geometric normal at the hit, world space
+ * @param tangent  direction of increasing u at the hit, world space
+ */
+__host__ __device__ glm::vec3 bumpNormal(
+    glm::vec3 normal,
+    glm::vec3 tangent,
+    const Material& m,
+    glm::vec2 uv);
+
 // CHECKITOUT
 /**
  * Computes a cosine-weighted random direction in a hemisphere.
@@ -63,5 +83,6 @@ __host__ __device__ void scatterRay(
     PathSegment& pathSegment,
     glm::vec3 intersect,
     glm::vec3 normal,
+    glm::vec3 geomNormal,
     const Material& m,
     thrust::default_random_engine& rng);
