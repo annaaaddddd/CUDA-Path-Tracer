@@ -434,6 +434,54 @@ The tiled Cornell box from the texture section, with and without bump:
 - Height from a grayscale image, for brushed metal
 - Normal maps, which most downloadable materials ship with
 
+### Direct lighting
+
+| | Off | On |
+|---|---|---|
+| Depth 2 | ![](img/direct_off_depth2_100samp.png) | ![](img/direct_on_depth2_100samp.png) |
+| Depth 8 | ![](img/direct_off_depth8_100samp.png) | ![](img/direct_on_depth8_100samp.png) |
+
+*A Cornell box with the light shrunk to a ninth of its area and made nine times brighter. 800x800, 100 spp in all four. The light is a square box; the oval around it is the ceiling next to it, lit from so close that it clips to white.*
+
+A path only counts when it happens to reach a light. With a small light most paths miss, and the image is noise. Direct lighting stops leaving the last step to chance: the last ray of a path is aimed at a random point on a light.
+
+- The scene loader keeps a list of the emissive boxes
+- One light is picked, then a point on its surface, uniformly by area
+- The ray goes to that point, and the next intersection pass finds out whether anything is in the way, so no separate shadow test is needed
+- The path is reweighted for having chosen that direction: `albedo / pi * cosSurface * cosLight / distance^2 * lightArea * lightCount`
+
+Noise on the floor, as the mean difference between neighboring pixels, in pixel values from 0 to 255:
+
+| | Off | On |
+|---|---|---|
+| Depth 2 | 46.8 | 4.9 |
+| Depth 8 | 77.8 | 77.4 |
+
+- At depth 2 the noise drops to a tenth, and the frame is as bright as before, 13.6 against 13.7, which is how the weight was checked
+- At depth 8 it changes nothing. Only the last ray is aimed, and only a fifth of the paths live long enough to cast it. The noise comes from paths that reach the light by chance on earlier bounces
+
+#### Direct lighting performance
+
+| | Off | On |
+|---|---|---|
+| Depth 2 | 20.4 ms | 20.1 ms |
+| Depth 8 | 44.7 ms | 45.2 ms |
+
+- No measurable cost: the aimed ray replaces the random one, so the number of rays is the same
+- Nothing was done to accelerate it
+
+#### Direct lighting on a GPU versus a CPU
+
+- The arithmetic is the same on both
+- Reusing the next intersection pass as the shadow test suits the GPU: the kernel stays the same size and no thread traces a ray the others do not
+- A CPU tracer would cast the shadow ray on the spot, which is simpler and works at every bounce
+
+#### Where direct lighting goes next
+
+- Aim a ray at the light on every bounce, not just the last one. That is what would help at depth 8
+- Mix light sampling with random sampling, which removes the bright specks right next to the light
+- Lights of any shape, not only boxes
+
 ## Bloopers
 
 ### The Blender cube that was twice the size

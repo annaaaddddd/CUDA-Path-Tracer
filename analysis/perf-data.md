@@ -23,6 +23,7 @@ Every script runs from the repo root, writes a CSV to `analysis/data/` and the r
 | `run-depth.sh` | trace depth, open/closed box | no | `depth-timing.csv` |
 | `run-texture.sh` | wall material: plain, image, procedural | no | `texture-timing.csv` |
 | `run-bump.sh` | bump on/off on procedural tiles | no | `bump-timing.csv` |
+| `run-direct.sh` | direct lighting on/off, trace depth | yes | `direct-timing.csv` |
 
 ## run-perf.sh: compaction sweep
 
@@ -214,6 +215,56 @@ Across the first vertical grout line, by image column:
 Column 328 is the right edge of the left tile, facing the green wall. Column 340 is the left edge of the right tile, facing the red wall.
 
 Mean pixel value of the whole frame: bump off 27.27, before fix 26.43, after fix 26.95.
+
+## run-direct.sh: direct lighting on versus off
+
+```bash
+bash analysis/scripts/run-direct.sh
+```
+
+- Scenes: `lighting/small_light_depth2.json` and `lighting/small_light_depth8.json`. `core/cornell_diffuse.json` with the light scaled from 3 x 0.3 x 3 to 1 x 0.3 x 1 and its emittance raised from 5 to 45
+- Toggle: `DIRECT_LIGHTING`
+- 300 iterations, all other toggles on
+- Run on 2026-09-28; three readings per row
+
+| Scene | Direct lighting | readings, ms/iteration | avg |
+|---|---|---|---|
+| small_light_depth2 | on | 20.28, 19.90, 20.14 | 20.11 |
+| small_light_depth2 | off | 20.79, 20.14, 20.25 | 20.39 |
+| small_light_depth8 | on | 45.41, 45.58, 44.74 | 45.24 |
+| small_light_depth8 | off | 45.24, 44.62, 44.24 | 44.70 |
+
+Paths alive after each bounce at depth 8, iteration 1, same with the toggle on or off: 529,113, 371,972, 292,150, 236,567, 194,431, 161,321, 133,863.
+
+## measure-noise.py: brightness and noise of the direct lighting renders
+
+```bash
+python analysis/scripts/measure-noise.py img/direct_off_depth2_100samp.png img/direct_on_depth2_100samp.png
+python analysis/scripts/measure-noise.py img/direct_off_depth8_100samp.png img/direct_on_depth8_100samp.png
+```
+
+- Images rendered by hand from the two scenes above at 100 spp, once with `DIRECT_LIGHTING` 0 and once with 1
+- Values are the 0 to 255 numbers stored in the PNG
+- Noise is the mean absolute difference between horizontally adjacent pixels inside a region that lies on one flat surface
+
+| Image | Region | mean | noise |
+|---|---|---|---|
+| depth 2, off | whole frame | 13.73 | |
+| | floor | 29.77 | 46.77 |
+| | back wall | 33.05 | 46.88 |
+| | ceiling | 1.33 | 2.61 |
+| depth 2, on | whole frame | 13.57 | |
+| | floor | 30.12 | 4.92 |
+| | back wall | 33.83 | 5.62 |
+| | ceiling | 0.84 | 0.67 |
+| depth 8, off | whole frame | 38.04 | |
+| | floor | 64.51 | 77.75 |
+| | back wall | 74.67 | 81.05 |
+| | ceiling | 34.05 | 49.06 |
+| depth 8, on | whole frame | 37.78 | |
+| | floor | 64.25 | 77.43 |
+| | back wall | 74.37 | 80.47 |
+| | ceiling | 33.73 | 48.47 |
 
 ## Image comparisons
 
