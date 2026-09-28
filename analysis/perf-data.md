@@ -10,6 +10,8 @@ This file records how every number in the README was measured and what the raw r
 - Timing comes from `PERF_LOG` in `src/pathtrace.cu`: host-side chrono around `pathtrace()`, printed as an average over each block of 100 iterations
 - Paths-alive counts are printed once, from iteration 1
 
+Times are comparable inside one script run, not between runs. `texture/tiles_procedural.json` read 39.86 ms on 2026-09-27, then 46.77 ms and 44.13 ms in two runs an hour apart on 2026-09-28 with the same binary. The code changed between the two days (tangents, bump, the below-surface check), but the last two readings show the machine alone moves the number by a few percent. The first scene of a run is also often the slowest. Effects under about 5% are below what this method can resolve.
+
 Every script runs from the repo root, writes a CSV to `analysis/data/` and the raw console output to `analysis/logs/` (not committed). Scripts that edit `src/pathtrace.cu` or a scene file restore it on exit, including on Ctrl-C, but they do not rebuild afterwards, so the binary left in `build/` is the last configuration that ran. Rebuild before rendering.
 
 | Script | Varies | Rebuilds | Output |
@@ -20,6 +22,7 @@ Every script runs from the repo root, writes a CSV to `analysis/data/` and the r
 | `run-refraction.sh` | sphere material, open/closed box | no | `refraction-timing.csv` |
 | `run-depth.sh` | trace depth, open/closed box | no | `depth-timing.csv` |
 | `run-texture.sh` | wall material: plain, image, procedural | no | `texture-timing.csv` |
+| `run-bump.sh` | bump on/off on procedural tiles | no | `bump-timing.csv` |
 
 ## run-perf.sh: compaction sweep
 
@@ -140,14 +143,77 @@ bash analysis/scripts/run-texture.sh
 
 - Scenes: `texture/tiles_plain.json`, `texture/tiles_image.json`, `texture/tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
 - The image is `scenes/textures/tiles_8x8.png`, 2048 x 2048, generated with the same tile count, grout width and colors as the procedural material
-- 300 iterations, depth 8, all toggles on, nearest-texel sampling
-- Run on 2026-09-27; three readings per row
+- 300 iterations, depth 8, all toggles on
+- Three readings per row
+- Run twice. The README quotes the second run, taken on the code that includes bump mapping
+
+Run on 2026-09-28, bilinear sampling:
+
+| Scene | Wall material | readings, ms/iteration | avg |
+|---|---|---|---|
+| tiles_plain | flat color | 45.02, 45.10, 44.61 | 44.91 |
+| tiles_image | image lookup | 43.82, 44.31, 43.61 | 43.91 |
+| tiles_procedural | computed tiles | 43.84, 44.53, 44.02 | 44.13 |
+
+Run on 2026-09-27, nearest-texel sampling, before tangents and bump were added:
 
 | Scene | Wall material | readings, ms/iteration | avg |
 |---|---|---|---|
 | tiles_plain | flat color | 39.38, 39.88, 39.55 | 39.60 |
 | tiles_image | image lookup | 39.56, 40.28, 39.44 | 39.76 |
 | tiles_procedural | computed tiles | 39.46, 40.15, 39.97 | 39.86 |
+
+`analysis/data/texture-timing.csv` holds the second run; the script overwrites it.
+
+## run-bump.sh: bump on versus off
+
+```bash
+bash analysis/scripts/run-bump.sh
+```
+
+- Scenes: `texture/tiles_procedural.json` and `bump/tiles_bump.json`, identical except for `"BUMP": 1.0`
+- 300 iterations, depth 8, all toggles on
+- Run on 2026-09-28, after the below-surface fix; three readings per row
+
+| Scene | Bump | readings, ms/iteration | avg |
+|---|---|---|---|
+| tiles_procedural | off | 45.59, 45.77, 48.94 | 46.77 |
+| tiles_bump | on | 47.23, 46.98, 45.59 | 46.60 |
+
+## measure-bump.py: pixel values across the grout
+
+```bash
+python analysis/scripts/measure-bump.py
+```
+
+- Images: `img/bump_off_5000samp.png`, `img/blooper/bump_light_leak.png` (before the below-surface fix), `img/bump_on_5000samp.png` (after). All from `bump/bump_on.json` or `bump/bump_off.json`, 800x800, 5000 spp
+- Values are the 0 to 255 numbers stored in the PNG, averaged over a strip 30 px wide. The light itself is clipped at 255
+- Noise is about 1 at 5000 spp
+
+Across the first horizontal grout line, mean of R, G and B, by image row:
+
+| row | 322 | 324 | 326 | 328 | 330 | 332 | 334 | 336 | 338 | 340 | 342 | 344 | 346 | 348 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bump off | 48 | 48 | 49 | 48 | 49 | 31 | 31 | 30 | 30 | 50 | 50 | 51 | 51 | 51 |
+| before fix | 47 | 47 | 48 | 37 | 24 | 31 | 29 | 30 | 29 | 49 | 48 | 50 | 50 | 50 |
+| after fix | 48 | 48 | 48 | 41 | 31 | 31 | 30 | 30 | 30 | 53 | 52 | 50 | 50 | 51 |
+
+Rows 328 to 330 are the bottom edge of the upper tile, facing away from the light. Rows 340 to 342 are the top edge of the lower tile, facing it.
+
+Across the first vertical grout line, by image column:
+
+| column | 324 | 326 | 328 | 330 | 332 | 334 | 336 | 338 | 340 | 342 | 344 | 346 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bump off R | 56 | 57 | 57 | 58 | 36 | 36 | 36 | 39 | 60 | 61 | 61 | 62 |
+| bump off G | 49 | 50 | 50 | 51 | 31 | 32 | 32 | 35 | 54 | 55 | 56 | 56 |
+| before fix R | 55 | 55 | 48 | 53 | 35 | 35 | 36 | 38 | 34 | 55 | 60 | 60 |
+| before fix G | 48 | 48 | 52 | 54 | 31 | 31 | 32 | 33 | 21 | 46 | 55 | 54 |
+| after fix R | 55 | 56 | 53 | 56 | 35 | 35 | 36 | 38 | 42 | 57 | 61 | 60 |
+| after fix G | 48 | 49 | 62 | 58 | 31 | 31 | 32 | 33 | 24 | 47 | 55 | 55 |
+
+Column 328 is the right edge of the left tile, facing the green wall. Column 340 is the left edge of the right tile, facing the red wall.
+
+Mean pixel value of the whole frame: bump off 27.27, before fix 26.43, after fix 26.95.
 
 ## Image comparisons
 

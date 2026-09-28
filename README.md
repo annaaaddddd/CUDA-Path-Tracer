@@ -355,23 +355,23 @@ It needs no memory, and it stays sharp at any distance because there are no texe
 
 One Cornell box, all five walls sharing one material so that most hits on every bounce sample it, rendered three ways:
 
-| Wall material | ms/iteration | vs plain |
-|---|---|---|
-| Flat color | 39.60 | baseline |
-| Image, 2048 x 2048, nearest | 39.76 | +0.4% |
-| Procedural tiles | 39.86 | +0.7% |
+| Wall material | ms/iteration |
+|---|---|
+| Flat color | 44.9 |
+| Image, 2048 x 2048 | 43.9 |
+| Procedural tiles | 44.1 |
 
-- The readings inside each row spread by 0.5 to 0.8 ms and the rows differ by at most 0.26 ms, so the three cannot be told apart. What the measurement gives is a bound: texturing costs under 1% of a frame
-- The image and the formula draw the same pattern with the same colors, so the only variable is a memory read against a few multiplies
+- The three are within 1 ms, and the untextured walls are the slowest, so the differences are not the cost of texturing
+- The same scene moves by more than that from one run to the next: the procedural walls read 39.9, 46.8 and 44.1 ms on three runs
 - A path samples at most once per bounce, next to an intersection test against every object, a sort and a partition
 
-Nothing was done to accelerate it, and the measurement is the reason. CUDA texture objects would move filtering and wrapping into hardware, but they cannot beat not sampling at all, and not sampling at all is only 0.16 ms ahead. The gain available is smaller than the noise, so the simpler layout stayed.
+Texturing has no cost this measurement can see. For the same reason nothing was done to accelerate it: CUDA texture objects would move filtering into hardware, but there is no measurable cost for them to remove.
 
 #### Texture mapping on a GPU versus a CPU
 
 - The lookup is the same arithmetic on both
 - Memory access is where they could differ: neighboring threads in a warp hit unrelated points, so their texel reads land far apart in a 50 MB array. None of that showed up in the timings
-- The branch between image, procedural and plain is per material, so material sorting lines a warp up on one of them. At under 1% there is little for it to recover
+- The branch between image, procedural and plain is per material, so material sorting lines a warp up on one of them. With no measurable cost there is little for it to recover
 
 #### Where texture mapping goes next
 
@@ -379,7 +379,70 @@ Nothing was done to accelerate it, and the measurement is the reason. CUDA textu
 - Store texels as bytes instead of floats: the 4096 x 4096 checker takes 201 MB today
 - A procedural marble
 
+### Bump mapping
+
+| Bump off | Bump on |
+|---|---|
+| ![](img/bump_off_5000samp.png) | ![](img/bump_on_5000samp.png) |
+
+*Procedural tiles on the back wall and the cube. 800x800, 5000 spp, depth 8. The geometry is identical in both; only the normal used for shading changes.*
+
+The tile pattern already knows where the grout is, so it can also say how high the surface is: 1 on a tile, 0 in the grout, a short ramp between. Bump mapping turns the slope of that height into a tilt of the normal.
+
+- Every hit carries a tangent, the direction in which u grows. Boxes take it from the face, triangles solve for it from their edges and UVs
+- The height is sampled at the hit and one small step away along u and along v, which gives the slope in both directions
+- The normal tilts away from uphill: `n' = normalize(N - strength * (hu * T + hv * B))`
+- A tilted normal can scatter a ray under the real surface. Those directions are mirrored back above it, see the bloopers for what happens without that
+
+| Tangent | Bumped normal |
+|---|---|
+| ![](img/debug_tangent.png) | ![](img/debug_bump_normals.png) |
+
+*Debug views, direction mapped to color. The tangent turns with the cube. In the normal view each tile is flat and only the ramps change color, opposite sides in opposite colors, which is what a groove looks like.*
+
+What the render shows, in pixel values from 0 to 255:
+
+| Tile edge | Bump off | Bump on |
+|---|---|---|
+| Facing the light | 50 | 53 |
+| Facing away from it | 49 | 31 |
+| Facing the green wall, green channel | 50 | 62 |
+
+The edge that faces the green wall turns green. Bump mapping only changes a direction, and global illumination does the rest.
+
+#### Bump mapping performance
+
+The tiled Cornell box from the texture section, with and without bump:
+
+| Walls | ms/iteration |
+|---|---|
+| Procedural tiles | 46.8 |
+| Procedural tiles with bump | 46.6 |
+
+- The two cannot be told apart: readings in one row spread by up to 3.4 ms and the rows differ by 0.2 ms
+- Bump costs three evaluations of the height function per hit, a few dozen multiplies
+- Nothing was done to accelerate it
+
+#### Bump mapping on a GPU versus a CPU
+
+- Same arithmetic on both, and no memory access at all since the height is computed
+- It adds one branch per hit, bumped or not, which sorting by material already groups
+
+#### Where bump mapping goes next
+
+- Express the strength as an angle. Today the right value depends on the tile count and grout width
+- Height from a grayscale image, for brushed metal
+- Normal maps, which most downloadable materials ship with
+
 ## Bloopers
+
+### The Blender cube that was twice the size
+
+![](img/blooper/huge_blender_cube.png)
+
+*First render with a loaded glTF mesh. Left: native cube. Right: the same JSON transform on a mesh cube.*
+
+Not a code bug. Blender's default cube spans -1 to 1 and this renderer's native cube spans -0.5 to 0.5, so the same `SCALE` gives a mesh twice as big. The loader, the transform and the intersection were right on the first run.
 
 ### The glass cube that only half existed
 
@@ -427,13 +490,23 @@ The sampler had `v = 1 - uv.y`, the flip that OpenGL-style code needs because it
 
 Some digits still sit sideways after the fix. That is the model, not the renderer: Blender's default cube unwraps into a cross, and several faces are rotated 90 degrees in UV space. A winding check on each visible face confirms the texture is rotated but never mirrored.
 
-### The Blender cube that was twice the size
+### The bevel that ate light
 
-![](img/blooper/huge_blender_cube.png)
+![](img/blooper/bump_light_leak.png)
 
-*First render with a loaded glTF mesh. Left: native cube. Right: the same JSON transform on a mesh cube.*
+*Bump mapping before the fix. 5000 spp. It looks plausible, which is what made it easy to miss.*
 
-Not a code bug. Blender's default cube spans -1 to 1 and this renderer's native cube spans -0.5 to 0.5, so the same `SCALE` gives a mesh twice as big. The loader, the transform and the intersection were right on the first run.
+The top edge of every tile faces the light and should be the brightest part of the tile. It measured 49 against 50 for the flat tile next to it.
+
+A bumped normal tilts the whole sampling hemisphere, and part of it ends up under the wall. Rays sent that way enter the wall and come back black.
+
+| | Bump off | Before | After |
+|---|---|---|---|
+| Edge facing the light | 50 | 49 | 53 |
+| Edge facing away | 49 | 24 | 31 |
+| Whole frame | 27.3 | 26.4 | 27.0 |
+
+The fix mirrors any scattered direction that points under the real surface back above it. Bump mapping should only move light around, and the whole-frame average says it now nearly does.
 
 ## Build notes
 
