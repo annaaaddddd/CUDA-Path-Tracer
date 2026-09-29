@@ -349,6 +349,8 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
             newMaterial.hasReflective = 1.0;
             newMaterial.specular.color = newMaterial.color;
+            // Phong exponent of the highlight; leaving it out keeps a perfect mirror
+            newMaterial.specular.exponent = p.value("EXPONENT", 0.0f);
         }
         else if (p["TYPE"] == "Refractive")
         {

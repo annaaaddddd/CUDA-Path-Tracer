@@ -221,6 +221,33 @@ __host__ __device__ void scatterRay(
         // Perfect specular: mirror the incoming ray about the surface normal
         newDir = glm::reflect(pathSegment.ray.direction, normal);
         pathSegment.color *= m.specular.color;
+
+        if (m.specular.exponent > 0.0f) {
+            // Imperfect specular: a random direction around the mirror direction, packed
+            // tighter as the exponent grows (GPU Gems 3, chapter 20, equations 7 to 9)
+            thrust::uniform_real_distribution<float> u01(0, 1);
+            float xi1 = u01(rng);
+            float xi2 = u01(rng);
+
+            // theta is the angle away from the mirror direction, phi goes around it
+            float theta = glm::acos(glm::pow(xi1, 1 / (1 + m.specular.exponent)));
+            float phi = 2 * PI * xi2;
+
+            // the direction in a frame whose z axis is the mirror direction
+            glm::vec3 local(glm::cos(phi) * glm::sin(theta), glm::sin(phi) * glm::sin(theta), glm::cos(theta));
+
+            // two axes perpendicular to the mirror direction; the helper axis is the
+            // world axis least aligned with it, so the cross product cannot collapse
+            glm::vec3 w = newDir;
+            glm::vec3 helper = glm::abs(w.x) < 0.577f ? glm::vec3(1, 0, 0)
+                             : glm::abs(w.y) < 0.577f ? glm::vec3(0, 1, 0)
+                             : glm::vec3(0, 0, 1);
+            glm::vec3 u = glm::normalize(glm::cross(w, helper));
+            glm::vec3 v = glm::cross(w, u);
+
+            // out of that frame, into world space
+            newDir = local.x * u + local.y * v + local.z * w;
+        }
     }
     else if (m.hasRefractive > 0) {
         // Dielectric (glass, water): reflect or refract, chosen by the Fresnel weight
