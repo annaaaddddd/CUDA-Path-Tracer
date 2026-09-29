@@ -10,7 +10,7 @@ This file records how every number in the README was measured and what the raw r
 - Timing comes from `PERF_LOG` in `src/pathtrace.cu`: host-side chrono around `pathtrace()`, printed as an average over each block of 100 iterations
 - Paths-alive counts are printed once, from iteration 1
 
-Times are comparable inside one script run, not between runs. `texture/tiles_procedural.json` read 39.86 ms on 2026-09-27, then 46.77 ms and 44.13 ms in two runs an hour apart on 2026-09-28 with the same binary. The code changed between the two days (tangents, bump, the below-surface check), but the last two readings show the machine alone moves the number by a few percent. The first scene of a run is also often the slowest. Effects under about 5% are below what this method can resolve.
+Times are comparable inside one script run, not between runs. `texturing/tiles_procedural.json` read 39.86 ms on 2026-09-27, then 46.77 ms and 44.13 ms in two runs an hour apart on 2026-09-28 with the same binary. The code changed between the two days (tangents, bump, the below-surface check), but the last two readings show the machine alone moves the number by a few percent. The first scene of a run is also often the slowest. Effects under about 5% are below what this method can resolve.
 
 Every script runs from the repo root, writes a CSV to `analysis/data/` and the raw console output to `analysis/logs/` (not committed). Scripts that edit `src/pathtrace.cu` or a scene file restore it on exit, including on Ctrl-C, but they do not rebuild afterwards, so the binary left in `build/` is the last configuration that ran. Rebuild before rendering.
 
@@ -142,7 +142,7 @@ bash analysis/scripts/run-depth.sh
 bash analysis/scripts/run-texture.sh
 ```
 
-- Scenes: `texture/tiles_plain.json`, `texture/tiles_image.json`, `texture/tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
+- Scenes: `texturing/tiles_plain.json`, `texturing/tiles_image.json`, `texturing/tiles_procedural.json`. The open Cornell box with all five walls sharing one material, so most hits on every bounce sample it
 - The image is `scenes/textures/tiles_8x8.png`, 2048 x 2048, generated with the same tile count, grout width and colors as the procedural material
 - 300 iterations, depth 8, all toggles on
 - Three readings per row
@@ -172,7 +172,7 @@ Run on 2026-09-27, nearest-texel sampling, before tangents and bump were added:
 bash analysis/scripts/run-bump.sh
 ```
 
-- Scenes: `texture/tiles_procedural.json` and `bump/tiles_bump.json`, identical except for `"BUMP": 1.0`
+- Scenes: `texturing/tiles_procedural.json` and `bump/tiles_bump.json`, identical except for `"BUMP": 1.0`
 - 300 iterations, depth 8, all toggles on
 - Run on 2026-09-28, after the below-surface fix; three readings per row
 

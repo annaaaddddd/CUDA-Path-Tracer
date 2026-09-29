@@ -9,7 +9,7 @@ EXE=build/bin/Release/cis565_path_tracer.exe
 ITERS=300
 # scene folder, scene file, label
 RUNS=(
-    "texture,tiles_procedural,flat"
+    "texturing,tiles_procedural,flat"
     "bump,tiles_bump,bump"
 )
 
