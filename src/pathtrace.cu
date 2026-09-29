@@ -36,8 +36,13 @@
 // Skip a mesh's triangle loop when the ray misses its bounding box
 #define MESH_AABB_CULL 1
 
+// Walk each mesh's bounding volume hierarchy instead of testing all its triangles
+#define BVH 1
+// most nodes that can wait to be visited at once; a balanced tree over a million triangles needs about 20
+#define BVH_STACK_SIZE 32
+
 // Aim the last ray of a path at a random point on a light instead of a random direction
-#define DIRECT_LIGHTING 1
+#define DIRECT_LIGHTING 0
 
 // Debug view: paint the first hit with its normal mapped to [0,1] instead of shading
 #define DEBUG_NORMALS 0
@@ -124,6 +129,7 @@ static ShadeableIntersection* dev_intersections = NULL;
 static glm::vec3* dev_texels = NULL;
 static TextureInfo* dev_textures = NULL;
 static int* dev_lights = NULL;
+static BVHNode* dev_bvhNodes = NULL;
 // TODO: static variables for device memory, any extra info you need, etc
 // ...
 
@@ -166,6 +172,9 @@ void pathtraceInit(Scene* scene)
     cudaMalloc(&dev_lights, scene->lights.size() * sizeof(int));
     cudaMemcpy(dev_lights, scene->lights.data(), scene->lights.size() * sizeof(int), cudaMemcpyHostToDevice);
 
+    cudaMalloc(&dev_bvhNodes, scene->bvhNodes.size() * sizeof(BVHNode));
+    cudaMemcpy(dev_bvhNodes, scene->bvhNodes.data(), scene->bvhNodes.size() * sizeof(BVHNode), cudaMemcpyHostToDevice);
+
     checkCUDAError("pathtraceInit");
 }
 
@@ -181,6 +190,7 @@ void pathtraceFree()
     cudaFree(dev_texels);
     cudaFree(dev_textures);
     cudaFree(dev_lights);
+    cudaFree(dev_bvhNodes);
 
     checkCUDAError("pathtraceFree");
 }
@@ -227,6 +237,40 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 }
 
 
+// Tests triangles[start, start + count) and keeps the nearest hit closer than meshT
+// outputs go through locals so a farther triangle cannot overwrite a nearer hit
+__device__ void intersectTriangleRange(
+    const Triangle* triangles,
+    int start,
+    int count,
+    const Ray& ray,
+    float& meshT,
+    glm::vec3& point,
+    glm::vec3& normal,
+    glm::vec2& uv,
+    glm::vec3& tangent,
+    bool& outside)
+{
+    for (int j = start; j < start + count; j++)
+    {
+        glm::vec3 triPoint;
+        glm::vec3 triNormal;
+        glm::vec2 triUV;
+        glm::vec3 triTangent;
+        bool triOutside;
+        float tt = triangleIntersectionTest(triangles[j], ray, triPoint, triNormal, triUV, triTangent, triOutside);
+        if (tt > 0.0f && tt < meshT)
+        {
+            meshT = tt;
+            point = triPoint;
+            normal = triNormal;
+            uv = triUV;
+            tangent = triTangent;
+            outside = triOutside;
+        }
+    }
+}
+
 // computeIntersections handles generating ray intersections ONLY.
 // Generating new rays is handled in your shader(s).
 // Feel free to modify the code below.
@@ -237,6 +281,7 @@ __global__ void computeIntersections(
     Geom* geoms,
     int geoms_size,
     Triangle* triangles,
+    BVHNode* bvhNodes,
     ShadeableIntersection* intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -280,30 +325,40 @@ __global__ void computeIntersections(
             }
             else if (geom.type == MESH)
             {
+                float meshT = FLT_MAX;
+#if BVH
+                // no recursion on the GPU, so the nodes still to visit wait on a small stack
+                int stack[BVH_STACK_SIZE];
+                int stackSize = 0;
+                stack[stackSize++] = geom.bvhRoot;
+                while (stackSize > 0)
+                {
+                    const BVHNode& node = bvhNodes[stack[--stackSize]];
+
+                    // a ray that misses the box misses everything inside it
+                    if (!aabbIntersectionTest(node.aabbMin, node.aabbMax, pathSegment.ray)) continue;
+
+                    if (node.triCount > 0)
+                    {
+                        // leaf
+                        intersectTriangleRange(triangles, node.triStart, node.triCount, pathSegment.ray,
+                            meshT, tmp_intersect, tmp_normal, tmp_uv, tmp_tangent, outside);
+                    }
+                    else if (stackSize + 2 <= BVH_STACK_SIZE)
+                    {
+                        // interior, both children wait their turn
+                        stack[stackSize++] = node.left;
+                        stack[stackSize++] = node.right;
+                    }
+                }
+#else
 #if MESH_AABB_CULL
                 // ray misses the bounding box, skip the whole triangle loop (t stays -1)
                 if (!aabbIntersectionTest(geom.aabbMin, geom.aabbMax, pathSegment.ray)) continue;
 #endif
-                // outputs go through locals so a farther triangle cannot overwrite a nearer hit
-                float meshT = FLT_MAX;
-                for (int j = geom.triStart; j < geom.triStart + geom.triCount; j++)
-                {
-                    glm::vec3 triPoint;
-                    glm::vec3 triNormal;
-                    glm::vec2 triUV;
-                    glm::vec3 triTangent;
-                    bool triOutside;
-                    float tt = triangleIntersectionTest(triangles[j], pathSegment.ray, triPoint, triNormal, triUV, triTangent, triOutside);
-                    if (tt > 0.0f && tt < meshT)
-                    {
-                        meshT = tt;
-                        tmp_intersect = triPoint;
-                        tmp_normal = triNormal;
-                        tmp_uv = triUV;
-                        tmp_tangent = triTangent;
-                        outside = triOutside;
-                    }
-                }
+                intersectTriangleRange(triangles, geom.triStart, geom.triCount, pathSegment.ray,
+                    meshT, tmp_intersect, tmp_normal, tmp_uv, tmp_tangent, outside);
+#endif
                 if (meshT < FLT_MAX) t = meshT;
             }
             // TODO: add more intersection tests here... triangle? metaball? CSG?
@@ -651,6 +706,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             dev_geoms,
             hst_scene->geoms.size(),
             dev_triangles,
+            dev_bvhNodes,
             dev_intersections
         );
         checkCUDAError("trace one bounce");

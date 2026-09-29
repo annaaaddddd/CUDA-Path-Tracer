@@ -37,6 +37,7 @@ struct Geom
     int triCount;
     glm::vec3 aabbMin;
     glm::vec3 aabbMax;
+    int bvhRoot;   // index into Scene::bvhNodes of the root of this mesh's hierarchy
 };
 
 // Procedural patterns a material can compute from uv instead of reading an image
@@ -60,8 +61,8 @@ struct Material
     float emittance;
     int albedoTex;        // index into the texture table, -1 when the material has no image
     int procedural;       // a ProceduralType, PROC_NONE when the color is not computed
-    float tileCount;      // PROC_TILES: tiles across one unit of uv
-    float groutWidth;     // PROC_TILES: grout thickness as a fraction of one tile
+    glm::vec2 tileCount;  // PROC_TILES: tiles across one unit of uv, along u and along v
+    glm::vec2 groutWidth; // PROC_TILES: grout thickness as a fraction of one tile, per axis
     glm::vec3 groutColor; // PROC_TILES: color of the lines between tiles
     float bumpStrength;   // how hard the height pattern tilts the normal, 0 turns bump off
 };
@@ -122,4 +123,16 @@ struct Triangle
     glm::vec3 vertices[3];
     glm::vec3 normals[3];
     glm::vec2 uvs[3];
+};
+
+// One node of a mesh's bounding volume hierarchy
+// A leaf owns a slice of Scene::triangles, an interior node owns two children
+struct BVHNode
+{
+    glm::vec3 aabbMin;
+    glm::vec3 aabbMax;
+    int left;       // index into Scene::bvhNodes, -1 on a leaf
+    int right;
+    int triStart;
+    int triCount;   // 0 on an interior node
 };

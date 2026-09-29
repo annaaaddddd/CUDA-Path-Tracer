@@ -114,8 +114,8 @@ __host__ __device__ glm::vec3 proceduralTiles(
     float dv = glm::min(cell.y, 1.0f - cell.y);
 
     // a grout line straddles two tiles, so each tile owns half of its width
-    float halfGrout = 0.5f * m.groutWidth;
-    if (du < halfGrout || dv < halfGrout) return m.groutColor;
+    glm::vec2 halfGrout = 0.5f * m.groutWidth;
+    if (du < halfGrout.x || dv < halfGrout.y) return m.groutColor;
     return m.color;
 }
 
@@ -129,12 +129,14 @@ __host__ __device__ float proceduralTilesHeight(
     cell = cell - glm::floor(cell);
     float du = glm::min(cell.x, 1.0f - cell.x);
     float dv = glm::min(cell.y, 1.0f - cell.y);
-    float d = glm::min(du, dv);
 
     // flat at 0 inside the grout, flat at 1 on the tile, a smooth ramp half a grout
     // wide between them; a hard step would have no slope for bumpNormal to measure
-    float halfGrout = 0.5f * m.groutWidth;
-    return glm::smoothstep(halfGrout, 2.0f * halfGrout, d);
+    // each axis has its own grout width, and the lower of the two heights wins
+    glm::vec2 halfGrout = 0.5f * m.groutWidth;
+    float hu = glm::smoothstep(halfGrout.x, 2.0f * halfGrout.x, du);
+    float hv = glm::smoothstep(halfGrout.y, 2.0f * halfGrout.y, dv);
+    return glm::min(hu, hv);
 }
 
 __host__ __device__ glm::vec3 bumpNormal(

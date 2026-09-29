@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <algorithm>
 #include <unordered_map>
 
 using namespace std;
@@ -141,6 +142,80 @@ static std::vector<int> gltfReadIndices(
     return out;
 }
 
+// A node with this many triangles or fewer becomes a leaf
+static const int bvhLeafSize = 4;
+
+static glm::vec3 triangleCentroid(const Triangle& tri)
+{
+    return (tri.vertices[0] + tri.vertices[1] + tri.vertices[2]) / 3.0f;
+}
+
+// Builds the hierarchy over triangles[triStart, triStart + triCount) and returns the
+// index of its root in bvhNodes. Triangles are reordered in place, so that every node
+// owns one contiguous slice
+int Scene::buildBVH(int triStart, int triCount)
+{
+    // reserve the slot first so a parent always sits before its children; the node is
+    // filled through a local copy because bvhNodes can reallocate during the recursion
+    int nodeIndex = (int)bvhNodes.size();
+    bvhNodes.push_back(BVHNode());
+
+    BVHNode node;
+    node.aabbMin = glm::vec3(FLT_MAX);
+    node.aabbMax = glm::vec3(-FLT_MAX);
+    node.left = -1;
+    node.right = -1;
+    node.triStart = triStart;
+    node.triCount = triCount;
+
+    // bounds of the centroids, used to choose where to split
+    glm::vec3 centroidMin(FLT_MAX);
+    glm::vec3 centroidMax(-FLT_MAX);
+
+    // the box holds every vertex; the centroid bounds only hold one point per triangle
+    for (int i = triStart; i < triStart + triCount; i++)
+    {
+        const Triangle& tri = triangles[i];
+        for (int k = 0; k < 3; k++)
+        {
+            node.aabbMin = glm::min(node.aabbMin, tri.vertices[k]);
+            node.aabbMax = glm::max(node.aabbMax, tri.vertices[k]);
+        }
+        centroidMin = glm::min(centroidMin, triangleCentroid(tri));
+        centroidMax = glm::max(centroidMax, triangleCentroid(tri));
+    }
+
+    if (triCount > bvhLeafSize)
+    {
+        // split along the axis on which the centroids are spread the widest
+        glm::vec3 extent = centroidMax - centroidMin;
+        int axis = 0;
+        if (extent.y > extent[axis]) axis = 1;
+        if (extent.z > extent[axis]) axis = 2;
+
+        // median split: the half with the smaller centroids moves to the front
+        // nth_element is enough, the order inside each half does not matter
+        int mid = triCount / 2;
+        std::nth_element(
+            triangles.begin() + triStart,
+            triangles.begin() + triStart + mid,
+            triangles.begin() + triStart + triCount,
+            [axis](const Triangle& a, const Triangle& b)
+            {
+                return triangleCentroid(a)[axis] < triangleCentroid(b)[axis];
+            });
+
+        // mid counts from the start of this slice, not from the start of the array
+        // triCount 0 marks the node as interior
+        node.left = buildBVH(triStart, mid);
+        node.right = buildBVH(triStart + mid, triCount - mid);
+        node.triCount = 0;
+    }
+
+    bvhNodes[nodeIndex] = node;
+    return nodeIndex;
+}
+
 void Scene::loadGLTF(const std::string& path, Geom& geom)
 {
     cout << "Loading glTF " << path << " ..." << endl;
@@ -206,6 +281,10 @@ void Scene::loadGLTF(const std::string& path, Geom& geom)
     geom.triCount = (int)triangles.size() - geom.triStart;
     geom.aabbMin = aabbMin;
     geom.aabbMax = aabbMax;
+
+    int nodesBefore = (int)bvhNodes.size();
+    geom.bvhRoot = buildBVH(geom.triStart, geom.triCount);
+    cout << "  " << bvhNodes.size() - nodesBefore << " BVH nodes" << endl;
 }
 
 // Loads one image, appends its pixels to `texels` and returns its index in `textures`
@@ -282,8 +361,20 @@ void Scene::loadFromJSON(const std::string& jsonName)
         if (p.contains("PROCEDURAL") && p["PROCEDURAL"] == "tiles")
         {
             newMaterial.procedural = PROC_TILES;
-            newMaterial.tileCount = p.value("TILES", 8.0f);
-            newMaterial.groutWidth = p.value("GROUT", 0.04f);
+            // one number applies to both axes; [u, v] sets them apart, which a surface
+            // that is not square needs to get square tiles and grout of one thickness
+            newMaterial.tileCount = glm::vec2(8.0f);
+            if (p.contains("TILES"))
+            {
+                const auto& t = p["TILES"];
+                newMaterial.tileCount = t.is_array() ? glm::vec2(t[0], t[1]) : glm::vec2(t.get<float>());
+            }
+            newMaterial.groutWidth = glm::vec2(0.04f);
+            if (p.contains("GROUT"))
+            {
+                const auto& g = p["GROUT"];
+                newMaterial.groutWidth = g.is_array() ? glm::vec2(g[0], g[1]) : glm::vec2(g.get<float>());
+            }
             newMaterial.groutColor = glm::vec3(0.25f);
             if (p.contains("GROUT_RGB"))
             {
