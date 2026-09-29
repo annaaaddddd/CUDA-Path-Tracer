@@ -62,7 +62,8 @@
                 0.85,
                 0.85,
                 0.87
-            ]
+            ],
+            "EXPONENT": 200.0
         },
         "glass": {
             "TYPE": "Refractive",
