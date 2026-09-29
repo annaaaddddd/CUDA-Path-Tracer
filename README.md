@@ -578,3 +578,6 @@ Every optional stage is a `#define` at the top of [`src/pathtrace.cu`](src/patht
 - Staged-kernel pipeline follows the CIS 5650 [path tracing primer recitation](https://docs.google.com/presentation/d/1rr6zFbpVkdMEkxBK4QLN4_tBRo168SJA_bMi2GkBB6I/edit?usp=drive_link)
 - Compaction and sorting use [Thrust](https://nvidia.github.io/cccl/thrust/)
 - UV checker texture from [oxpal.com](https://www.oxpal.com/uv-checker-texture.html)
+- Sink and faucet: [Small Sink and Faucet](https://sketchfab.com/3d-models/92e6ad65f7c541b38b949f643d24400e) by 3DJeff, CC Attribution
+- Lemon slice: [Lemon Slice](https://sketchfab.com/3d-models/8c1b266ff28c46f8b65a66e82eb38fc9) by Asia Matusik, CC Attribution
+- From [Poly Haven](https://polyhaven.com), CC0: [Lemon](https://polyhaven.com/a/lemon), [Wooden Cutting Board](https://polyhaven.com/a/wooden_cutting_board), [Wooden Spoon](https://polyhaven.com/a/wooden_spoon), [Potted Plant 04](https://polyhaven.com/a/potted_plant_04), [Multi Cleaner Bottle](https://polyhaven.com/a/multi_cleaner_bottle), and the textures [Marble 01](https://polyhaven.com/a/marble_01) and [Wood Table 001](https://polyhaven.com/a/wood_table_001)
