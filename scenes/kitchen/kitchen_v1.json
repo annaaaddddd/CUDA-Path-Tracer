@@ -28,10 +28,11 @@
         "counter": {
             "TYPE": "Diffuse",
             "RGB": [
-                0.8,
-                0.8,
-                0.78
-            ]
+                1.0,
+                1.0,
+                1.0
+            ],
+            "TEXTURE": "../textures/Marble012_1K-PNG_Color.png"
         },
         "tiles": {
             "TYPE": "Diffuse",
@@ -100,16 +101,34 @@
                 1.0
             ],
             "TEXTURE": "../textures/lemon_diff_1k.jpg"
+        },
+        "plant": {
+            "TYPE": "Diffuse",
+            "RGB": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "TEXTURE": "../textures/potted_plant_04_diff_1k.jpg"
+        },
+        "bottle": {
+            "TYPE": "Diffuse",
+            "RGB": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "TEXTURE": "../textures/multi_cleaner_bottle_diff_1k.jpg"
         }
     },
     "Camera": {
         "RES": [
-            400,
-            400
+            800,
+            800
         ],
         "FOVY": 20.0,
-        "ITERATIONS": 1000,
-        "DEPTH": 8,
+        "ITERATIONS": 4000,
+        "DEPTH": 16,
         "FILE": "kitchen_v1",
         "EYE": [
             4.5,
@@ -125,7 +144,9 @@
             0.0,
             1.0,
             0.0
-        ]
+        ],
+        "LENS_RADIUS": 0.09,
+        "FOCAL_DISTANCE": 9.0
     },
     "Objects": [
         {
@@ -435,9 +456,9 @@
             "FILE": "../models/glasscup.gltf",
             "MATERIAL": "glass",
             "TRANS": [
-                -0.2,
+                2.0,
                 0.2,
-                -1.4
+                3.0
             ],
             "ROTAT": [
                 0.0,
@@ -466,9 +487,9 @@
                 0.0
             ],
             "SCALE": [
-                7.0,
-                7.0,
-                7.0
+                8.5,
+                8.5,
+                8.5
             ]
         },
         {
@@ -478,7 +499,7 @@
             "MATERIAL": "lemon_skin",
             "TRANS": [
                 1.4,
-                0.84,
+                0.9,
                 1.6
             ],
             "ROTAT": [
@@ -499,18 +520,81 @@
             "MATERIAL": "spoon_wood",
             "TRANS": [
                 1.72,
-                0.65,
+                0.64,
                 2.11
             ],
             "ROTAT": [
                 0.0,
                 105.0,
+                6.0
+            ],
+            "SCALE": [
+                8.0,
+                8.0,
+                8.0
+            ]
+        },
+        {
+            "NAME": "plant",
+            "TYPE": "mesh",
+            "FILE": "../models/potted_plant_04_1k.gltf",
+            "MATERIAL": "plant",
+            "TRANS": [
+                -7.0,
+                0.2,
+                -2.9
+            ],
+            "ROTAT": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "SCALE": [
+                13.0,
+                13.0,
+                13.0
+            ]
+        },
+        {
+            "NAME": "bottle",
+            "TYPE": "mesh",
+            "FILE": "../models/multi_cleaner_bottle_1k.gltf",
+            "MATERIAL": "bottle",
+            "TRANS": [
+                0.9,
+                0.2,
+                -3.0
+            ],
+            "ROTAT": [
+                0.0,
+                -30.0,
                 0.0
             ],
             "SCALE": [
                 10.0,
                 10.0,
                 10.0
+            ]
+        },
+        {
+            "NAME": "plant_small",
+            "TYPE": "mesh",
+            "FILE": "../models/potted_plant_04_1k.gltf",
+            "MATERIAL": "plant",
+            "TRANS": [
+                -8.2,
+                0.2,
+                -1.5
+            ],
+            "ROTAT": [
+                0.0,
+                140.0,
+                0.0
+            ],
+            "SCALE": [
+                7.0,
+                7.0,
+                7.0
             ]
         }
     ]
