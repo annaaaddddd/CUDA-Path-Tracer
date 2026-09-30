@@ -720,12 +720,17 @@ A real sink is brushed, and a brushed surface blurs its reflections. That was th
 
 ## Build notes
 
+Built with Visual Studio 2022 and CUDA 13.3 on Windows 11, for an RTX 3090 Ti; the CUDA architecture is left at `native`, so CMake picks the GPU it finds.
+
 `CMakeLists.txt` has one change beyond the source file list: MSVC gets `/Zc:preprocessor` for both C++ and CUDA, which enables the conforming preprocessor.
 
 ```powershell
+cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 & ".\build\bin\Release\cis565_path_tracer.exe" "scenes/core/cornell.json"
 ```
+
+Every timing in this README is from a Release build. Debug and RelWithDebInfo compile the CUDA with `-G`, which turns off device optimization and makes a frame many times slower; they are for stepping through kernels, not for measuring them.
 
 - Esc saves the image and exits
 - S saves the image without exiting, and the filename is printed to the console
