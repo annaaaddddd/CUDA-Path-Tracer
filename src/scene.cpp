@@ -341,65 +341,68 @@ void Scene::loadFromJSON(const std::string& jsonName)
         const auto& name = item.key();
         const auto& p = item.value();
         Material newMaterial{};
-        newMaterial.albedoTex = -1;
-        if (p["TYPE"] == "Diffuse")
+        const auto& col = p["RGB"];
+        newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+        newMaterial.surface.image = -1;
+
+        const std::string type = p["TYPE"];
+        if (type == "Diffuse")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.type = DIFFUSE;
         }
-        else if (p["TYPE"] == "Emitting")
+        else if (type == "Emitting")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.type = EMISSIVE;
             newMaterial.emittance = p["EMITTANCE"];
         }
-        else if (p["TYPE"] == "Specular")
+        else if (type == "Specular")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.hasReflective = 1.0;
-            newMaterial.specular.color = newMaterial.color;
-            // Phong exponent of the highlight; leaving it out keeps a perfect mirror
-            newMaterial.specular.exponent = p.value("EXPONENT", 0.0f);
+            newMaterial.type = SPECULAR;
+            // Phong exponent of the lobe; leaving it out keeps a perfect mirror
+            newMaterial.exponent = p.value("EXPONENT", 0.0f);
         }
-        else if (p["TYPE"] == "Refractive")
+        else if (type == "Refractive")
         {
-            const auto& col = p["RGB"];
-            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
-            newMaterial.hasRefractive = 1.0;
-            newMaterial.indexOfRefraction = p["IOR"];
+            newMaterial.type = DIELECTRIC;
+            newMaterial.ior = p["IOR"];
         }
+        else
+        {
+            cout << "unknown material type " << type << " on " << name << endl;
+            exit(-1);
+        }
+
         // optional computed pattern for the base color; RGB is the tile color
         if (p.contains("PROCEDURAL") && p["PROCEDURAL"] == "tiles")
         {
-            newMaterial.procedural = PROC_TILES;
+            newMaterial.surface.procedural = PROC_TILES;
             // one number applies to both axes; [u, v] sets them apart, which a surface
             // that is not square needs to get square tiles and grout of one thickness
-            newMaterial.tileCount = glm::vec2(8.0f);
+            newMaterial.tiles.count = glm::vec2(8.0f);
             if (p.contains("TILES"))
             {
                 const auto& t = p["TILES"];
-                newMaterial.tileCount = t.is_array() ? glm::vec2(t[0], t[1]) : glm::vec2(t.get<float>());
+                newMaterial.tiles.count = t.is_array() ? glm::vec2(t[0], t[1]) : glm::vec2(t.get<float>());
             }
-            newMaterial.groutWidth = glm::vec2(0.04f);
+            newMaterial.tiles.grout = glm::vec2(0.04f);
             if (p.contains("GROUT"))
             {
                 const auto& g = p["GROUT"];
-                newMaterial.groutWidth = g.is_array() ? glm::vec2(g[0], g[1]) : glm::vec2(g.get<float>());
+                newMaterial.tiles.grout = g.is_array() ? glm::vec2(g[0], g[1]) : glm::vec2(g.get<float>());
             }
-            newMaterial.groutColor = glm::vec3(0.25f);
+            newMaterial.tiles.groutColor = glm::vec3(0.25f);
             if (p.contains("GROUT_RGB"))
             {
                 const auto& g = p["GROUT_RGB"];
-                newMaterial.groutColor = glm::vec3(g[0], g[1], g[2]);
+                newMaterial.tiles.groutColor = glm::vec3(g[0], g[1], g[2]);
             }
         }
         // optional bump strength; the height comes from the material's procedural pattern
-        newMaterial.bumpStrength = p.value("BUMP", 0.0f);
+        newMaterial.surface.bump = p.value("BUMP", 0.0f);
         // optional image for the base color, any material type
         if (p.contains("TEXTURE"))
         {
-            newMaterial.albedoTex = loadTexture(sceneDir + p["TEXTURE"].get<std::string>());
+            newMaterial.surface.image = loadTexture(sceneDir + p["TEXTURE"].get<std::string>());
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
@@ -438,7 +441,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
         }
 
         // direct lighting samples points on emissive boxes, so remember where they are
-        if (newGeom.type == CUBE && materials[newGeom.materialid].emittance > 0.0f)
+        if (newGeom.type == CUBE && materials[newGeom.materialid].type == EMISSIVE)
         {
             lights.push_back((int)geoms.size());
         }

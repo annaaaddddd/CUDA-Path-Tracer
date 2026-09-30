@@ -47,24 +47,38 @@ enum ProceduralType
     PROC_TILES
 };
 
+// How a surface scatters light, one per material
+enum MaterialType
+{
+    DIFFUSE,
+    EMISSIVE,
+    SPECULAR,
+    DIELECTRIC
+};
+
 struct Material
 {
-    glm::vec3 color;
+    MaterialType type;
+    glm::vec3 color;      // base color; an image or a pattern below replaces it per hit
+    float emittance;      // EMISSIVE only
+    float exponent;       // SPECULAR only: Phong exponent of the lobe, 0 is a perfect mirror
+    float ior;            // DIELECTRIC only: index of refraction
+
+    // where the base color comes from when it is not the constant above
     struct
     {
-        float exponent;
-        glm::vec3 color;
-    } specular;
-    float hasReflective;
-    float hasRefractive;
-    float indexOfRefraction;
-    float emittance;
-    int albedoTex;        // index into the texture table, -1 when the material has no image
-    int procedural;       // a ProceduralType, PROC_NONE when the color is not computed
-    glm::vec2 tileCount;  // PROC_TILES: tiles across one unit of uv, along u and along v
-    glm::vec2 groutWidth; // PROC_TILES: grout thickness as a fraction of one tile, per axis
-    glm::vec3 groutColor; // PROC_TILES: color of the lines between tiles
-    float bumpStrength;   // how hard the height pattern tilts the normal, 0 turns bump off
+        int image;        // index into the texture table, -1 when the material has no image
+        int procedural;   // a ProceduralType, PROC_NONE when the color is not computed
+        float bump;       // how hard the pattern's height tilts the normal, 0 turns bump off
+    } surface;
+
+    // parameters of PROC_TILES
+    struct
+    {
+        glm::vec2 count;      // tiles across one unit of uv, along u and along v
+        glm::vec2 grout;      // grout thickness as a fraction of one tile, per axis
+        glm::vec3 groutColor; // color of the lines between tiles
+    } tiles;
 };
 
 // One loaded image, stored as a slice of the shared texel array

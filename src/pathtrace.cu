@@ -510,15 +510,15 @@ __global__ void shadeMaterial(
             Material material = materials[intersection.materialId];
             // material is a local copy, so a textured hit can overwrite its color
             // and scatterRay picks it up unchanged
-            if (material.albedoTex >= 0) {
-                material.color = sampleTexture(texels, textures[material.albedoTex], intersection.uv);
+            if (material.surface.image >= 0) {
+                material.color = sampleTexture(texels, textures[material.surface.image], intersection.uv);
             }
-            else if (material.procedural == PROC_TILES) {
+            else if (material.surface.procedural == PROC_TILES) {
                 material.color = proceduralTiles(material, intersection.uv);
             }
             // keep the real surface normal; bump only changes the one used for shading
             glm::vec3 geomNormal = intersection.surfaceNormal;
-            if (material.bumpStrength > 0.0f && material.procedural == PROC_TILES) {
+            if (material.surface.bump > 0.0f && material.surface.procedural == PROC_TILES) {
                 intersection.surfaceNormal = bumpNormal(intersection.surfaceNormal, intersection.tangent, material, intersection.uv);
             }
 #if DEBUG_BUMP
@@ -543,7 +543,7 @@ __global__ void shadeMaterial(
                 // a path is cut off when remainingBounces reaches 0, and it is decremented
                 // below, so the ray made here is the last one traced when 2 remain now
                 bool lastRay = pathSegments[idx].remainingBounces == 2;
-                bool diffuse = material.hasReflective <= 0 && material.hasRefractive <= 0;
+                bool diffuse = material.type == DIFFUSE;
                 if (lastRay && diffuse && num_lights > 0)
                 {
                     aimedAtLight = true;
