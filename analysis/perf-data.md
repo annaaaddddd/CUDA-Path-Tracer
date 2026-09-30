@@ -6,7 +6,7 @@ This file records how every number in the README was measured and what the raw r
 
 - GPU: NVIDIA GeForce RTX 3090 Ti, 24 GB, driver 616.56
 - CPU: AMD Ryzen 9 5950X, 128 GB, Windows 11 Home
-- Resolution 800x800 in every run
+- Resolution 800x800 in every run, except the kitchen rows of `run-bvh.sh`, which are 400x400
 - Timing comes from `PERF_LOG` in `src/pathtrace.cu`: host-side chrono around `pathtrace()`, printed as an average over each block of 100 iterations
 - Paths-alive counts are printed once, from iteration 1
 
@@ -24,6 +24,9 @@ Every script runs from the repo root, writes a CSV to `analysis/data/` and the r
 | `run-texture.sh` | wall material: plain, image, procedural | no | `texture-timing.csv` |
 | `run-bump.sh` | bump on/off on procedural tiles | no | `bump-timing.csv` |
 | `run-direct.sh` | direct lighting on/off, trace depth | yes | `direct-timing.csv` |
+| `run-bvh.sh` | BVH on/off, triangle count, kitchen | yes | `bvh-timing.csv` |
+| `run-specular.sh` | Phong exponent of the mirror sphere | no | `specular-timing.csv` |
+| `run-dof.sh` | lens radius on the kitchen | no | `dof-timing.csv` |
 
 ## run-perf.sh: compaction sweep
 
@@ -90,17 +93,19 @@ bash analysis/scripts/run-aabb.sh
 
 - Scene: `mesh/suzanne.json` with `suzanne_4k.gltf` and `suzanne_16k.gltf` from `scenes/models/`
 - 100 iterations, depth 8, compaction, sorting and anti-aliasing on
-- Toggle: `MESH_AABB_CULL`
-- Run on 2026-09-25; one reading per row
+- Toggle: `MESH_AABB_CULL`; the script also forces `BVH` off for the run, since the BVH root box makes the per-mesh box redundant
+- Run on 2026-09-30; one reading per row
 
 | Model | Triangles | Culling | ms/iteration | fps |
 |---|---|---|---|---|
-| suzanne_4k | 3,936 | on | 177.49 | 5.6 |
-| suzanne_4k | 3,936 | off | 226.58 | 4.4 |
-| suzanne_16k | 15,744 | on | 622.71 | 1.6 |
-| suzanne_16k | 15,744 | off | 843.14 | 1.2 |
+| suzanne_4k | 3,936 | on | 282.63 | 3.5 |
+| suzanne_4k | 3,936 | off | 408.56 | 2.4 |
+| suzanne_16k | 15,744 | on | 1045.60 | 1.0 |
+| suzanne_16k | 15,744 | off | 1591.47 | 0.6 |
 
-Note: a longer manual run of the 16k model with culling off drifted from 843 to 901 ms over 600 iterations, so the script reads the first block only.
+The same script on 2026-09-25, before the BVH, DOF and imperfect specular code existed, read 177.49 / 226.58 / 622.71 / 843.14 ms for the same four rows. Whether the difference is the machine or the code that was added in between is not separated here; the culling-on rows agree with the BVH-off rows of `run-bvh.sh` measured the same day, which is why the README uses the 2026-09-30 readings for both tables.
+
+Note: a longer manual run of the 16k model with culling off drifted from 843 to 901 ms over 600 iterations on 2026-09-25, so the script reads the first block only.
 
 ## run-refraction.sh: mirror versus glass
 
@@ -265,6 +270,64 @@ python analysis/scripts/measure-noise.py img/direct_off_depth8_100samp.png img/d
 | | floor | 64.25 | 77.43 |
 | | back wall | 74.37 | 80.47 |
 | | ceiling | 33.73 | 48.47 |
+
+## run-bvh.sh: BVH on versus off
+
+```bash
+bash analysis/scripts/run-bvh.sh
+```
+
+- Scenes: `mesh/suzanne.json` with `suzanne_4k.gltf` and `suzanne_16k.gltf`, and `kitchen/kitchen_v0.json` (the gray-material kitchen, five models, 400x400)
+- Toggle: `BVH`; off leaves `MESH_AABB_CULL` on, so the comparison is against one box per mesh
+- 300 iterations, depth 8 in all three scenes, all other toggles on
+- Run on 2026-09-30; three readings per row
+
+| Scene | Triangles | BVH | readings, ms/iteration | avg |
+|---|---|---|---|---|
+| suzanne_4k | 3,936 | on | 48.61, 47.70, 48.03 | 48.11 |
+| suzanne_4k | 3,936 | off | 278.56, 280.48, 282.27 | 280.44 |
+| suzanne_16k | 15,744 | on | 49.32, 48.84, 48.87 | 49.01 |
+| suzanne_16k | 15,744 | off | 1041.20, 1074.89, 1089.57 | 1068.55 |
+| kitchen_v0 | 25,653 | on | 33.78, 33.39, 33.39 | 33.52 |
+| kitchen_v0 | 25,653 | off | 333.70, 334.01, 331.36 | 333.02 |
+
+The off rows are 24% to 27% slower than `run-aabb.sh` measured on 2026-09-25 for the same configuration (226.58 and 843.14 ms). The code paths are the same apart from the helper the triangle loop moved into; the difference is taken as day-to-day drift of the machine, which is why the README compares only within this run.
+
+BVH node counts printed at load: suzanne_4k 2,047, suzanne_16k 8,191, sink 4,095, glass 3,327, cutting board 2,047, lemon 2,047, spoon 4,095. Leaf size 4, `bvhMaxDepth` 24, never reached.
+
+## run-specular.sh: Phong exponent
+
+```bash
+bash analysis/scripts/run-specular.sh
+```
+
+- Scenes: `core/cornell.json` (perfect mirror) and `specular/specular_5000.json`, `specular_500.json`, `specular_50.json`, which are copies of it with `EXPONENT` on the sphere
+- No toggle; the scenes are copied to temporary files with `ITERATIONS` set to 300 and deleted afterwards
+- Run on 2026-09-30; three readings per row
+
+| Exponent | readings, ms/iteration | avg |
+|---|---|---|
+| mirror | 43.88, 45.89, 44.03 | 44.60 |
+| 5000 | 45.87, 45.54, 45.45 | 45.62 |
+| 500 | 45.69, 45.70, 46.12 | 45.84 |
+| 50 | 46.29, 45.43, 45.87 | 45.86 |
+
+A first run of the script the same day read mirror 44.64, 5000 43.82, 500 43.52, 50 43.56, with the lobes about 1 ms under the mirror instead of 1 ms over. The two runs together put the cost of the lobe inside the run-to-run spread.
+
+## run-dof.sh: lens radius
+
+```bash
+bash analysis/scripts/run-dof.sh
+```
+
+- Scene: `kitchen/kitchen_v1.json`, the final kitchen, 800x800, depth 16
+- `LENS_RADIUS` edited in place to 0.09 and 0.0, restored on exit; `FOCAL_DISTANCE` 9.0 in both
+- 300 iterations; run on 2026-09-30; three readings per row
+
+| Lens radius | readings, ms/iteration | avg |
+|---|---|---|
+| 0.09 | 211.17, 206.96, 207.18 | 208.44 |
+| 0.0 | 204.97, 204.43, 204.58 | 204.66 |
 
 ## Image comparisons
 

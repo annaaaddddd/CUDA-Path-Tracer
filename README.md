@@ -8,11 +8,9 @@ CUDA Path Tracer
 
 This is a physically-based path tracer that runs entirely on the GPU. Instead of giving each pixel a thread and looping the whole path inside one kernel, the renderer parallelizes over *path segments*.
 
-> TODO: replace this hero image with the custom scene
+![](img/kitchen_final.png)
 
-![](img/cornell_specular_5000samp_aa.png)
-
-*Cornell box with a perfect mirror sphere. 800x800, 5000 samples per pixel, trace depth 8, compaction, material sorting and stochastic anti-aliasing all on. 36.0 ms/iteration, so the full render takes just over three minutes.*
+*A kitchen sink in afternoon light. Eight glTF models, 50 000 triangles, image and procedural textures, bump-mapped grout, brushed steel, glass, and a thin-lens camera focused on the cutting board. 800x800, 4000 samples per pixel, trace depth 16, about 210 ms per iteration.*
 
 ## Overview
 
@@ -38,7 +36,7 @@ Because compaction and sorting both shuffle the path array, every `PathSegment` 
 
 These are the pieces everything else is built on: the shading kernel, and the three stages that reshape the path array around it.
 
-Every timing in this README is milliseconds per iteration at 800x800, which is 640,000 paths per iteration, and changes one variable at a time. How each number was measured, with the raw readings, is in [`analysis/perf-data.md`](analysis/perf-data.md).
+Every timing in this README is milliseconds per iteration at 800x800 unless a caption says otherwise, which is 640,000 paths per iteration, and changes one variable at a time. How each number was measured, with the raw readings, is in [`analysis/perf-data.md`](analysis/perf-data.md).
 
 The three optimizations below were each measured on the same open Cornell box, a scene with seven primitives and two BSDFs.
 
@@ -65,11 +63,11 @@ Shading is done with a single kernel that branches on material type.
 
 | This renderer, 5000 spp | Reference, 5000 spp |
 |---|---|
-| ![](img/cornell_diffuse_5000samp.png) | ![](img/REFERENCE_cornell.5000samp.png) |
+| <img src="img/cornell_diffuse_5000samp.png" width="400"> | <img src="img/REFERENCE_cornell.5000samp.png" width="400"> |
 
 The render matches the reference on the two things that break first if the diffuse BSDF or the throughput bookkeeping is wrong: the color bleeding off the red and green walls, and the soft contact shadow under the sphere.
 
-Per-pixel comparison: mean absolute difference 2.1 out of 255, identical global means, and every 4x4 region mean within 0.07%. That is the Monte Carlo noise left at 5000 samples, not a systematic difference.
+Per-pixel comparison: mean absolute difference 2.1 out of 255, global means equal to three decimals, and every 4x4 region mean within 0.07%. That is the Monte Carlo noise left at 5000 samples, not a systematic difference.
 
 **Specular**
 
@@ -164,7 +162,7 @@ Sealing the box removes the only cheap way for a path to die, and that turns com
 Both rows have compaction and anti-aliasing on, so sorting is the only variable. It costs 15.9 ms per iteration, a 79% slowdown.
 
 - What it targets: warp divergence in the shading kernel, by making a warp's 32 threads hit the same material branch
-- Why there is nothing to win here: `shadeMaterial` branches three ways (emitter, scatter, miss) and `scatterRay` splits again into diffuse and specular, none of them expensive -> almost no divergence to cure
+- Why there is little to win here: `shadeMaterial` branches three ways (emitter, scatter, miss) and `scatterRay` splits again into diffuse and specular, none of them expensive -> almost no divergence to cure
 - What it costs: a full `thrust::sort_by_key` over 20-byte intersection keys and 44-byte path values, up to 640k elements, at every one of the 8 bounces
 - When it would pay: many materials with genuinely different shading costs, so an unsorted warp stalls on its slowest thread: refraction with Fresnel, texture lookups, a microfacet BSDF
 
@@ -180,8 +178,8 @@ Note that pictures below are 4x nearest-neighbor blowups, so the pixel grid stay
 
 | | AA off | AA on |
 |---|---|---|
-| Sphere silhouette | ![](img/aa_off_sphere_edge.png) | ![](img/aa_on_sphere_edge.png) |
-| Light fixture edge | ![](img/aa_off_light_edge.png) | ![](img/aa_on_light_edge.png) |
+| Sphere silhouette | <img src="img/aa_off_sphere_edge.png" width="400"> | <img src="img/aa_on_sphere_edge.png" width="400"> |
+| Light fixture edge | <img src="img/aa_off_light_edge.png" width="400"> | <img src="img/aa_on_light_edge.png" width="400"> |
 
 The sphere pair clearly shows that without jitter the silhouette is a hard staircase of fully-lit and fully-dark pixels; with jitter the boundary pixels land in between, in proportion to how much of the sphere actually covers them.
 
@@ -192,7 +190,7 @@ The sphere pair clearly shows that without jitter the silhouette is a hard stair
 
 The difference is -0.29 ms, meaning the run with jitter came out marginally *faster*, and the two ranges overlap almost entirely. The cost of anti-aliasing is smaller than the run-to-run spread of either run, so this measurement cannot separate it from zero. What it does establish is a bound: whatever AA costs, it is well under 1.5% of a frame.
 
-That is where the work sits, too. The jitter is two random draws in the ray generation kernel, which runs once per iteration, while frame time is dominated by the eight-deep bounce loop that anti-aliasing never touches. It buys a visibly better silhouette for nothing measurable.
+That is where the work sits, too. The jitter is two random draws in the ray generation kernel, which runs once per iteration, while frame time is dominated by the eight-deep bounce loop that anti-aliasing never touches. It buys a visibly better silhouette for a cost this measurement cannot see.
 
 An earlier run had put the cost at 3 to 9 ms. That measurement was contaminated: re-running the same three toggles gave 36.03 ms against the 40.5 to 45.9 ms first recorded, so the earlier figure is discarded rather than reported.
 
@@ -200,7 +198,7 @@ An earlier run had put the cost at 3 to 9 ms. That measurement was contaminated:
 
 A single-threaded CPU tracer would take minutes per frame instead of milliseconds, and two of the three optimizations above would be pointless on it.
 
-- Stream compaction: exists because GPU threads run in lockstep warps and an idle lane is wasted silicon. A CPU loop skips a dead path with a branch that costs nothing
+- Stream compaction: exists because GPU threads run in lockstep warps and an idle lane is wasted silicon. A CPU loop skips a dead path with a branch that costs next to nothing
 - Material sorting: exists because a diverging warp serializes its branches. A CPU core takes the branch it needs and moves on
 - Anti-aliasing: transfers unchanged, same cost on either side
 
@@ -214,6 +212,7 @@ How a `.gltf` is read:
 - The JSON is an index over a raw `.bin` blob: attribute -> accessor -> bufferView -> byte range
 - POSITION, NORMAL, TEXCOORD_0 and the index buffer are each `start byte + i * stride`, reinterpreted as float, uint16 or uint32
 - Every triangle is transformed into world space at load time with the scene's `TRANS` / `ROTAT` / `SCALE`, normals through the inverse transpose
+- Every primitive of every mesh in the file goes into the same geom, so a model exported in parts (pot, soil, plant) loads as one object. Node transforms are not applied, so the parts must be exported in place
 - All triangles live in one flat device array; a mesh geom is a `[triStart, triCount)` range into it
 
 World-space triangles mean the intersection kernel never inverse-transforms a ray, and the bounding box below (later a BVH) is built directly in world space.
@@ -222,9 +221,9 @@ Intersection is Moller-Trumbore with one change: the glm version culls back face
 
 | Native cube vs glTF cube | Suzanne, 15 744 triangles |
 |---|---|
-| ![](img/mesh_vs_primitive_5000samp.png) | ![](img/suzanne_16k_diffuse_1000samp.png) |
+| <img src="img/mesh_vs_primitive_5000samp.png" width="400"> | <img src="img/suzanne_16k_diffuse_1000samp.png" width="400"> |
 
-*Left: the base code's cube beside the same cube from a Blender glTF export, same material, rotation and scale, 5000 spp. Right: Suzanne with two subdivision levels, 1000 spp, depth 8, about 690 ms per iteration with bounding-box culling on.*
+*Left: the base code's cube beside the same cube from a Blender glTF export, same material, rotation and scale, 5000 spp. Right: Suzanne with two subdivision levels, 1000 spp, depth 8.*
 
 Correctness check: a slightly larger red mesh cube placed exactly on top of the native one rendered as a solid red cube with no white poking through, which pins down the transform, the winding and the intersection at once.
 
@@ -234,23 +233,64 @@ Each mesh keeps the world-space AABB of its triangles. With `MESH_AABB_CULL` on,
 
 | Model | Triangles | Culling off | Culling on | Speedup |
 |---|---|---|---|---|
-| suzanne_4k | 3 936 | 226.6 ms | 177.5 ms | 1.28x |
-| suzanne_16k | 15 744 | 843.1 ms | 622.7 ms | 1.35x |
+| suzanne_4k | 3 936 | 408.6 ms | 282.6 ms | 1.45x |
+| suzanne_16k | 15 744 | 1591.5 ms | 1045.6 ms | 1.52x |
 
-- Time grows close to linearly with triangle count: four times the triangles cost 3.5x with culling and 3.7x without, because without an acceleration structure every ray that reaches the box still tests every triangle
-- The box saves only about a quarter because Suzanne fills the middle of the frame, so nearly every primary ray hits it anyway; the savings come from secondary rays leaving the walls in other directions
-- 1.2 fps at 16k triangles is the number a BVH has to beat
+*100 iterations, BVH off, all other toggles on.*
+
+- Time grows close to linearly with triangle count: four times the triangles cost 3.7x with culling and 3.9x without, because without an acceleration structure every ray that reaches the box still tests every triangle
+- The box saves about a third because Suzanne fills the middle of the frame, so nearly every primary ray hits it anyway; the savings come from secondary rays leaving the walls in other directions
+- 1 fps at 16k triangles is the number the BVH in the next section has to beat
 
 #### Mesh loading on a GPU versus a CPU
 
 A CPU path tracer would load the glTF the same way; the difference is in traversal.
-- The GPU wins on raw throughput: every live path tests the mesh at once, so 1.2 fps at 16k triangles is still up to 640k paths each testing 15,744 triangles per bounce
+- The GPU wins on raw throughput: every live path tests the mesh at once, so 1 fps at 16k triangles is still up to 640k paths each testing 15,744 triangles per bounce
 - The GPU loses on divergence: threads in a warp run in lockstep, so a thread whose ray missed the bounding box still waits while its neighbors walk the whole triangle loop. The box test saves that thread's arithmetic but not its time. A CPU core skips the loop the moment its own ray misses
 
 #### Where mesh loading goes next
 
-- A BVH, so a ray stops testing every triangle
-- Load every part of a glTF file, not just the first mesh
+- Apply the node transforms in the file, so models do not have to be re-exported with transforms baked in
+- Read the material and texture the file names, instead of assigning them in the scene JSON
+
+### Bounding volume hierarchy
+
+Bounding-box culling only decides whether a ray tests a mesh at all. The BVH decides which of its triangles: each mesh gets a tree of boxes, and a ray walks down only the branches it touches.
+
+Building, on the CPU at load time:
+- A node holds the box around its triangles. A node with more than four triangles is split in two and the halves become its children
+- The split is a median split: sort the node's triangles by centroid along the axis on which the centroids spread the widest, and cut the list in half. `std::nth_element` does the partial sort in linear time
+- Splitting by count keeps the tree balanced no matter how the triangles are placed, so its depth is `log2(triangles / 4)`: 12 levels for Suzanne. A depth limit, `bvhMaxDepth`, caps it anyway so the traversal stack can be sized
+- Triangles are reordered in place, so every node owns one contiguous slice of the same flat array the intersection kernel already reads. The nodes of all meshes sit in one array too, and a geom stores the index of its root
+
+Traversal, on the GPU:
+- No recursion. A 32-entry stack in registers holds the nodes still to visit; pop one, test the ray against its box, push both children or test the leaf's triangles
+- The leaf test is the same loop as before, over four triangles instead of thousands
+- `BVH` toggles it; off falls back to the single box per mesh
+
+| Scene | Triangles | One box per mesh | BVH | Speedup |
+|---|---|---|---|---|
+| suzanne_4k | 3 936 | 280.4 ms | 48.1 ms | 5.8x |
+| suzanne_16k | 15 744 | 1068.6 ms | 49.0 ms | 21.8x |
+| kitchen, 5 models | 25 653 | 333.0 ms | 33.5 ms | 9.9x |
+
+*300 iterations each, 800x800 for Suzanne and 400x400 for the kitchen, all other toggles on. The one-box column matches the culling-on column of the table above, measured the same day.*
+
+- With the BVH, four times the triangles cost 1 ms more. Without it they cost 3.8x as much. The walk is logarithmic in triangle count, the loop is linear
+- Suzanne at 49 ms is within a few ms of the Cornell box without a mesh, so the mesh is no longer the expensive part of the frame
+- The kitchen gains less than Suzanne because its five meshes are small on screen and most rays miss them at the root box, where the two versions do the same work
+
+#### The BVH on a GPU versus a CPU
+
+- The GPU still wins on throughput, and by a wider margin than before: the per-ray work shrank from thousands of triangle tests to a few dozen box tests, so the same launch finishes much sooner
+- Divergence is where it suffers. Two rays in a warp walk different branches, so each one waits at every step for the other's box test, and a warp is only as fast as its deepest ray. A CPU core walks its own tree and stops the moment its own ray is done
+- Recursion would be the natural CPU shape; the GPU version keeps its own stack because a device function cannot recurse without spilling to slow local memory
+
+#### Where the BVH goes next
+
+- Visit the nearer child first and stop once the current best hit is closer than the next box, which turns a full walk into an early exit
+- A surface-area heuristic instead of the median, which puts the split where it cuts the most empty space
+- A top-level BVH over the objects in the scene, so the kernel stops looping over every geom
 
 ### Refraction
 
@@ -266,8 +306,8 @@ Dielectrics are the third material type. Per hit:
 
 | | Mirror | Glass, IOR 1.5 |
 |---|---|---|
-| Open box | ![](img/cornell_specular_5000samp.png) | ![](img/glass_open_5000samp.png) |
-| Closed box | ![](img/cornell_closed_5000samp.png) | ![](img/glass_closed_5000samp.png) |
+| Open box | <img src="img/cornell_specular_5000samp.png" width="400"> | <img src="img/glass_open_5000samp.png" width="400"> |
+| Closed box | <img src="img/cornell_closed_5000samp.png" width="400"> | <img src="img/glass_closed_5000samp.png" width="400"> |
 
 *Each row is one scene file with only the sphere's material changed. 800x800, 5000 spp, depth 8. The closed box adds a blue wall behind the camera and moves the camera inside the room.*
 
@@ -289,9 +329,9 @@ The same sphere as a mirror and as glass, in both boxes:
 | Open | 37.0 ms | 37.4 ms | +1.1% |
 | Closed | 64.8 ms | 65.5 ms | +1.0% |
 
-The material is free at this scale. A dielectric hit costs one Schlick evaluation, one discriminant and one random draw more than a mirror hit, and the sphere covers under a tenth of the frame. The closed box is slower in both columns because paths there cannot escape and mostly run to the depth limit, which is the stream compaction story above, not the material's.
+The material's cost is below what this measurement resolves at this scale. A dielectric hit costs one Schlick evaluation, one discriminant and one random draw more than a mirror hit, and the sphere covers under a tenth of the frame. The closed box is slower in both columns because paths there cannot escape and mostly run to the depth limit, which is the stream compaction story above, not the material's.
 
-Nothing was done to accelerate it: there is nothing to amortize when the extra work is a handful of multiplies per hit.
+No acceleration was attempted: there is little to amortize when the extra work is a handful of multiplies per hit.
 
 The cost that does show up with glass is indirect: it wants a deeper trace. The glass scenes at depth 8 and 32:
 
@@ -305,7 +345,7 @@ The cost that does show up with glass is indirect: it wants a deeper trace. The 
 
 #### Refraction on a GPU versus a CPU
 
-- The per-hit arithmetic is identical on both, so the material itself neither benefits nor suffers
+- The per-hit arithmetic is the same on both, so the material itself neither benefits nor suffers
 - Where the GPU suffers is branching: reflect-or-refract is a random choice per path, so a warp that shades glass takes both branches. That only matters when many paths in a warp are glass, which material sorting is meant to arrange, and the 1% above says it is not yet worth worrying about
 - Extra depth is where the GPU benefits, but only when paths die: compaction shrinks each launch, so depth 32 costs 1.5x depth 8 in the open box. In the closed box it costs 3.4x, close to the 4x a CPU would pay, because there is nothing to compact
 
@@ -319,7 +359,7 @@ The cost that does show up with glass is indirect: it wants a deeper trace. The 
 
 | Nearest texel | Bilinear |
 |---|---|
-| ![](img/texture_nearest.png) | ![](img/texture_bilinear.png) |
+| <img src="img/texture_nearest.png" width="400"> | <img src="img/texture_bilinear.png" width="400"> |
 
 *An 8 x 8 pixel image stretched over two cubes, the base code's box on the left and a glTF cube on the right. 800x800, about 3000 and 2000 spp.*
 
@@ -334,7 +374,7 @@ How a color gets from the image to the hit:
 
 | Plain | Image texture | UV debug view |
 |---|---|---|
-| ![](img/mesh_vs_primitive_5000samp.png) | ![](img/texture_cube_5000samp.png) | ![](img/uv_debug_cube.png) |
+| <img src="img/mesh_vs_primitive_5000samp.png" width="260"> | <img src="img/texture_cube_5000samp.png" width="260"> | <img src="img/uv_debug_cube.png" width="260"> |
 
 *Same layout, same camera. The textured glTF cube has one full UV square per face. The debug view paints (u, v, 0) on the first hit of a cube with Blender's default cross unwrap, where each face covers a sixteenth of the image.*
 
@@ -365,7 +405,7 @@ One Cornell box, all five walls sharing one material so that most hits on every 
 - The same scene moves by more than that from one run to the next: the procedural walls read 39.9, 46.8 and 44.1 ms on three runs
 - A path samples at most once per bounce, next to an intersection test against every object, a sort and a partition
 
-Texturing has no cost this measurement can see. For the same reason nothing was done to accelerate it: CUDA texture objects would move filtering into hardware, but there is no measurable cost for them to remove.
+Texturing has no cost this measurement can see. For the same reason no acceleration was attempted: CUDA texture objects would move filtering into hardware, but there is no measurable cost for them to remove.
 
 #### Texture mapping on a GPU versus a CPU
 
@@ -383,7 +423,7 @@ Texturing has no cost this measurement can see. For the same reason nothing was 
 
 | Bump off | Bump on |
 |---|---|
-| ![](img/bump_off_5000samp.png) | ![](img/bump_on_5000samp.png) |
+| <img src="img/bump_off_5000samp.png" width="400"> | <img src="img/bump_on_5000samp.png" width="400"> |
 
 *Procedural tiles on the back wall and the cube. 800x800, 5000 spp, depth 8. The geometry is identical in both; only the normal used for shading changes.*
 
@@ -396,7 +436,7 @@ The tile pattern already knows where the grout is, so it can also say how high t
 
 | Tangent | Bumped normal |
 |---|---|
-| ![](img/debug_tangent.png) | ![](img/debug_bump_normals.png) |
+| <img src="img/debug_tangent.png" width="400"> | <img src="img/debug_bump_normals.png" width="400"> |
 
 *Debug views, direction mapped to color. The tangent turns with the cube. In the normal view each tile is flat and only the ramps change color, opposite sides in opposite colors, which is what a groove looks like.*
 
@@ -421,7 +461,7 @@ The tiled Cornell box from the texture section, with and without bump:
 
 - The two cannot be told apart: readings in one row spread by up to 3.4 ms and the rows differ by 0.2 ms
 - Bump costs three evaluations of the height function per hit, a few dozen multiplies
-- Nothing was done to accelerate it
+- No acceleration was attempted
 
 #### Bump mapping on a GPU versus a CPU
 
@@ -438,8 +478,8 @@ The tiled Cornell box from the texture section, with and without bump:
 
 | | Off | On |
 |---|---|---|
-| Depth 2 | ![](img/direct_off_depth2_100samp.png) | ![](img/direct_on_depth2_100samp.png) |
-| Depth 8 | ![](img/direct_off_depth8_100samp.png) | ![](img/direct_on_depth8_100samp.png) |
+| Depth 2 | <img src="img/direct_off_depth2_100samp.png" width="400"> | <img src="img/direct_on_depth2_100samp.png" width="400"> |
+| Depth 8 | <img src="img/direct_off_depth8_100samp.png" width="400"> | <img src="img/direct_on_depth8_100samp.png" width="400"> |
 
 *A Cornell box with the light shrunk to a ninth of its area and made nine times brighter. 800x800, 100 spp in all four. The light is a square box; the oval around it is the ceiling next to it, lit from so close that it clips to white.*
 
@@ -458,7 +498,7 @@ Noise on the floor, as the mean difference between neighboring pixels, in pixel 
 | Depth 8 | 77.8 | 77.4 |
 
 - At depth 2 the noise drops to a tenth, and the frame is as bright as before, 13.6 against 13.7, which is how the weight was checked
-- At depth 8 it changes nothing. Only the last ray is aimed, and only a fifth of the paths live long enough to cast it. The noise comes from paths that reach the light by chance on earlier bounces
+- At depth 8 the noise moves from 77.8 to 77.4, which is no change this measurement can see. Only the last ray is aimed, and only a fifth of the paths live long enough to cast it. The noise comes from paths that reach the light by chance on earlier bounces
 
 #### Direct lighting performance
 
@@ -467,8 +507,8 @@ Noise on the floor, as the mean difference between neighboring pixels, in pixel 
 | Depth 2 | 20.4 ms | 20.1 ms |
 | Depth 8 | 44.7 ms | 45.2 ms |
 
-- No measurable cost: the aimed ray replaces the random one, so the number of rays is the same
-- Nothing was done to accelerate it
+- The rows differ by 0.3 and 0.5 ms, under the run-to-run spread, which fits the design: the aimed ray replaces the random one, so the number of rays is the same
+- No acceleration was attempted
 
 #### Direct lighting on a GPU versus a CPU
 
@@ -481,6 +521,116 @@ Noise on the floor, as the mean difference between neighboring pixels, in pixel 
 - Aim a ray at the light on every bounce, not just the last one. That is what would help at depth 8
 - Mix light sampling with random sampling, which removes the bright specks right next to the light
 - Lights of any shape, not only boxes
+
+### Imperfect specular
+
+| Perfect mirror | Exponent 5000 | Exponent 500 | Exponent 50 |
+|---|---|---|---|
+| <img src="img/specular_mirror_zoom.png" width="195"> | <img src="img/specular_5000_zoom.png" width="195"> | <img src="img/specular_500_zoom.png" width="195"> | <img src="img/specular_50_zoom.png" width="195"> |
+
+*The same sphere at four settings of the Phong exponent, cut out of the 800x800 renders and blown up 3x. 5000 spp. From left to right the reflection of the light goes from a sharp rectangle to a soft glow, and the walls from two flat colors to two smears; the full frames are in `img/specular_*.png`.*
+
+A perfect mirror sends every ray in exactly one direction. A brushed or worn surface spreads them around that direction, tighter the shinier it is. The spread is a Phong lobe, sampled the way GPU Gems 3 chapter 20 gives it:
+- Two random numbers become an angle off the mirror direction, `theta = acos(xi1 ^ (1 / (n + 1)))`, and an angle around it, `phi = 2 pi xi2`
+- The direction is assembled in a frame whose z axis is the mirror direction and carried into world space
+- The exponent `n` comes from the material as `EXPONENT`; leaving it out keeps the mirror
+- A direction that lands under the surface is mirrored back above it, the same guard bump mapping uses
+
+The sink and faucet in the kitchen use an exponent of 200. As a perfect mirror the basin turned into a shattered reflection of itself, which is in the bloopers.
+
+| Perfect mirror | Exponent 200 |
+|---|---|
+| <img src="img/blooper/chrome_sink.png" width="400"> | <img src="img/kitchen_v1_materials.png" width="400"> |
+
+#### Imperfect specular performance
+
+| Material | ms/iteration |
+|---|---|
+| Perfect mirror | 44.6 |
+| Exponent 5000 | 45.6 |
+| Exponent 500 | 45.8 |
+| Exponent 50 | 45.9 |
+
+*The Cornell mirror sphere scene, 300 iterations each.*
+
+- The three lobes are within 0.3 ms of each other and about 1 ms, or 3%, over the mirror, under the 5% this measurement resolves. An earlier run of the same script had them 1 ms under the mirror. The sphere covers a tenth of the frame and the extra work is a few operations per hit
+- No acceleration was attempted: a hit costs two random draws, one `pow` and four trigonometric calls more than a mirror hit
+
+#### Imperfect specular on a GPU versus a CPU
+
+- The arithmetic is the same on both, and it is a fixed amount of work per hit with no loop and no data-dependent branch, which is the kind of code a GPU likes
+- Where the sphere is, the frame is one material either way, so material sorting has nothing new to line up
+
+#### Where imperfect specular goes next
+
+- Normalize the lobe, so a rough surface reflects the same total energy as a smooth one instead of slightly less
+- A microfacet model such as GGX, whose highlights have the long tails real metal shows
+- Roughness from a texture, so a surface can be worn in patches
+
+### Depth of field
+
+| Pinhole | Lens radius 0.09 | Lens radius 0.2 |
+|---|---|---|
+| <img src="img/kitchen_v1_marble.png" width="260"> | <img src="img/kitchen_final.png" width="260"> | <img src="img/kitchen_dof_strong.png" width="260"> |
+
+*The kitchen focused 9 units in, just behind the lemon. 400x400 at the two ends, 800x800 in the middle. The larger lens is what a real 4 cm aperture would do this close; the final image uses about 2 cm.*
+
+The camera is a thin lens: rays start from a disk instead of a point, and all rays for one pixel pass through the same point on the plane of focus.
+- The point of focus is where the pinhole ray crosses the plane `FOCAL_DISTANCE` in front of the camera, measured along the view direction, so rays toward the edge of the frame travel farther to reach it
+- The ray origin moves to a uniformly random point on a disk of radius `LENS_RADIUS` in the camera's right and up directions, and the ray is re-aimed at the point of focus. The disk sample takes the square root of one random number as its radius, otherwise the samples crowd the center
+- The lens sample is seeded apart from the anti-aliasing jitter so the two do not move together
+- A scene without the two keys renders as before
+
+#### Depth of field performance
+
+| Lens radius | ms/iteration |
+|---|---|
+| 0 | 204.7 |
+| 0.09 | 208.4 |
+
+*The kitchen scene, 800x800, 300 iterations each.*
+
+- Under 2%, at the edge of what the timing resolves. If it is real, it is not the lens arithmetic but the rays: a blurred pixel's rays fan out and hit different objects, so neighboring threads stop sharing the same branch of the BVH
+- The real cost is not per iteration but in the number of iterations: a blurred region averages over more of the scene, so it needs more samples to reach the same noise level. The final image took 4000
+- No acceleration was attempted: two random draws and a re-aim per primary ray
+
+#### Depth of field on a GPU versus a CPU
+
+- All of it happens in the ray generation kernel, once per pixel per iteration, and it is the same arithmetic on either side
+- It should add no divergence: every thread takes the same path through the code, only with different random numbers
+
+#### Where depth of field goes next
+
+- Pick the focus by clicking a pixel, using the first hit's distance
+- A shaped aperture, so the out-of-focus highlights take the shape of a real lens's blades
+
+### The kitchen scene
+
+The final image was built up in steps, each one a render that could be checked before the next.
+
+| Gray models | Materials | Marble and glass | Final |
+|---|---|---|---|
+| <img src="img/kitchen_v0_gray.png" width="350"> | <img src="img/kitchen_v1_materials.png" width="335"> | <img src="img/kitchen_v1_marble.png" width="370"> | ![](img/kitchen_final.png) |
+
+The room is primitives: a counter cut into four boxes around the sink so the basin has somewhere to go, a tiled backsplash with the procedural tiles and bump mapping, two emissive panels standing in for windows.
+- Eight models: the sink with its faucet, the glass, the cutting board, the lemon, the spoon, the bottle and two potted plants, 50 000 triangles in all
+- Scene units are 10 cm, so a model in meters takes `SCALE 10`
+- Trace depth 16, because a ray through the glass crosses four surfaces before it sees anything, and at depth 8 the glass rendered as a gray lump
+
+#### Scene file additions
+
+The base code's JSON format is kept, with these keys added. Every one is optional.
+
+| Where | Key | Meaning |
+|---|---|---|
+| Object | `"TYPE": "mesh"`, `FILE` | A glTF file, path relative to the scene file |
+| Object | `NAME` | A label, ignored by the loader |
+| Material | `TEXTURE` | An image for the base color, path relative to the scene file |
+| Material | `PROCEDURAL`, `TILES`, `GROUT`, `GROUT_RGB` | The tile pattern: tiles per UV unit, grout width as a fraction of a tile, grout color. `TILES` and `GROUT` take one number or `[u, v]` |
+| Material | `BUMP` | Bump strength on the tile pattern, 0 or absent turns it off |
+| Material | `EXPONENT` | Phong exponent on a `Specular` material, absent keeps a perfect mirror |
+| Material | `IOR` | Index of refraction on a `Refractive` material |
+| Camera | `LENS_RADIUS`, `FOCAL_DISTANCE` | The thin lens, absent keeps the pinhole |
 
 ## Bloopers
 
@@ -556,6 +706,18 @@ A bumped normal tilts the whole sampling hemisphere, and part of it ends up unde
 
 The fix mirrors any scattered direction that points under the real surface back above it. Bump mapping should only move light around, and the whole-frame average says it now nearly does.
 
+### The sink that was a broken mirror
+
+| Perfect mirror | Exponent 200 |
+|---|---|
+| <img src="img/blooper/chrome_sink.png" width="400"> | <img src="img/kitchen_v1_materials.png" width="400"> |
+
+*The first render with real materials, and the same scene after the fix. The faucet looks like chrome either way. The basin on the left looks like it was dropped.*
+
+The material was a perfect mirror, and the render is correct: each black shard is a reflection of something dark, and dragging the camera made the shards slide around, which ruled out the model. A basin is a mirror facing itself, so most of what it reflects is its own far wall reflecting the underside of the counter.
+
+A real sink is brushed, and a brushed surface blurs its reflections. That was the push to add the Phong exponent, and with it set to 200 the basin reads as steel.
+
 ## Build notes
 
 `CMakeLists.txt` has one change beyond the source file list: MSVC gets `/Zc:preprocessor` for both C++ and CUDA, which enables the conforming preprocessor.
@@ -569,8 +731,8 @@ cmake --build build --config Release
 - S saves the image without exiting, and the filename is printed to the console
 
 Every optional stage is a `#define` at the top of [`src/pathtrace.cu`](src/pathtrace.cu), so any combination can be built and measured without touching the rest of the code:
-- `STREAM_COMPACTION`, `SORT_BY_MATERIAL`, `ANTIALIASING`, `MESH_AABB_CULL`, `PERF_LOG`
-- `DEBUG_NORMALS`: paints the first hit with its normal
+- `STREAM_COMPACTION`, `SORT_BY_MATERIAL`, `ANTIALIASING`, `MESH_AABB_CULL`, `BVH`, `DIRECT_LIGHTING`, `DEPTH_OF_FIELD`, `PERF_LOG`
+- `DEBUG_NORMALS`, `DEBUG_UV`, `DEBUG_TANGENT`, `DEBUG_BUMP`: paint the first hit with its normal, UV, tangent or bumped normal
 - `DEBUG_TERMINATION`: paints each path by how it ended (depth exhausted, NaN direction, NaN origin, genuine miss). This is how the glass bug in the bloopers was found
 
 ## References
