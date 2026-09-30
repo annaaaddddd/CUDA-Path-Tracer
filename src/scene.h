@@ -9,7 +9,7 @@ private:
     void loadFromJSON(const std::string& jsonName);
     void loadGLTF(const std::string& path, Geom& geom);
     int loadTexture(const std::string& path);
-    int buildBVH(int triStart, int triCount);
+    int buildBVH(int triStart, int triCount, int depth);
 
 public:
     Scene(std::string filename);

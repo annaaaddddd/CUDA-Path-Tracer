@@ -144,6 +144,9 @@ static std::vector<int> gltfReadIndices(
 
 // A node with this many triangles or fewer becomes a leaf
 static const int bvhLeafSize = 4;
+// Splitting stops at this depth even when a node still holds more than bvhLeafSize,
+// the root being depth 0. Must stay below BVH_STACK_SIZE in pathtrace.cu
+static const int bvhMaxDepth = 24;
 
 static glm::vec3 triangleCentroid(const Triangle& tri)
 {
@@ -153,7 +156,7 @@ static glm::vec3 triangleCentroid(const Triangle& tri)
 // Builds the hierarchy over triangles[triStart, triStart + triCount) and returns the
 // index of its root in bvhNodes. Triangles are reordered in place, so that every node
 // owns one contiguous slice
-int Scene::buildBVH(int triStart, int triCount)
+int Scene::buildBVH(int triStart, int triCount, int depth)
 {
     // reserve the slot first so a parent always sits before its children; the node is
     // filled through a local copy because bvhNodes can reallocate during the recursion
@@ -185,7 +188,7 @@ int Scene::buildBVH(int triStart, int triCount)
         centroidMax = glm::max(centroidMax, triangleCentroid(tri));
     }
 
-    if (triCount > bvhLeafSize)
+    if (triCount > bvhLeafSize && depth < bvhMaxDepth)
     {
         // split along the axis on which the centroids are spread the widest
         glm::vec3 extent = centroidMax - centroidMin;
@@ -207,8 +210,8 @@ int Scene::buildBVH(int triStart, int triCount)
 
         // mid counts from the start of this slice, not from the start of the array
         // triCount 0 marks the node as interior
-        node.left = buildBVH(triStart, mid);
-        node.right = buildBVH(triStart + mid, triCount - mid);
+        node.left = buildBVH(triStart, mid, depth + 1);
+        node.right = buildBVH(triStart + mid, triCount - mid, depth + 1);
         node.triCount = 0;
     }
 
@@ -234,56 +237,64 @@ void Scene::loadGLTF(const std::string& path, Geom& geom)
     cout << "  .bin size " << bytes.size() << " bytes (gltf says "
          << gltf["buffers"][0]["byteLength"] << ")" << endl;
 
-    // 3. Locate the attributes of mesh 0, primitive 0 (values are accessor indices)
-    const json& prim = gltf["meshes"][0]["primitives"][0];
-    int posAcc = prim["attributes"]["POSITION"];
-    int nrmAcc = prim["attributes"]["NORMAL"];
-    int uvAcc  = prim["attributes"].value("TEXCOORD_0", -1);   // -1 if the mesh has no UVs
-    int idxAcc = prim["indices"];
-
-    std::vector<float> positions = gltfReadFloats(gltf, bytes, posAcc);
-    std::vector<float> normals   = gltfReadFloats(gltf, bytes, nrmAcc);
-    std::vector<float> uvs       = (uvAcc >= 0) ? gltfReadFloats(gltf, bytes, uvAcc) : std::vector<float>();
-    std::vector<int>   indices   = gltfReadIndices(gltf, bytes, idxAcc);
-
-    cout << "  " << positions.size() / 3 << " vertices, " << indices.size() / 3 << " triangles" << endl;
-
-    // 4. Assemble triangles in WORLD space so intersection and AABB/BVH need no inverse transform
+    // 3. Every primitive of every mesh goes into this one geom, because a model is often
+    // exported in parts (pot, soil, plant) that share one material and one coordinate space
+    // Node transforms are not applied, so the parts must already sit where they belong
     geom.triStart = (int)triangles.size();
     glm::vec3 aabbMin(FLT_MAX);
     glm::vec3 aabbMax(-FLT_MAX);
 
-    for (size_t t = 0; t + 2 < indices.size(); t += 3)
+    for (const json& mesh : gltf["meshes"])
     {
-        Triangle tri;
-        for (int k = 0; k < 3; k++)
+        for (const json& prim : mesh["primitives"])
         {
-            int vi = indices[t + k];
+            // values are accessor indices
+            int posAcc = prim["attributes"]["POSITION"];
+            int nrmAcc = prim["attributes"]["NORMAL"];
+            int uvAcc  = prim["attributes"].value("TEXCOORD_0", -1);   // -1 if the mesh has no UVs
+            int idxAcc = prim["indices"];
 
-            // pull vertex vi out of the flat arrays
-            glm::vec3 p(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
-            glm::vec3 n(normals[vi * 3], normals[vi * 3 + 1], normals[vi * 3 + 2]);
-            glm::vec2 uv(0.0f);
-            if (!uvs.empty())  uv = glm::vec2(uvs[vi * 2], uvs[vi * 2 + 1]);
+            std::vector<float> positions = gltfReadFloats(gltf, bytes, posAcc);
+            std::vector<float> normals   = gltfReadFloats(gltf, bytes, nrmAcc);
+            std::vector<float> uvs       = (uvAcc >= 0) ? gltfReadFloats(gltf, bytes, uvAcc) : std::vector<float>();
+            std::vector<int>   indices   = gltfReadIndices(gltf, bytes, idxAcc);
 
-            // w = 1 for a point, w = 0 for a direction; normals use the inverse transpose
-            p = glm::vec3(geom.transform * glm::vec4(p, 1.0f));
-            n = glm::normalize(glm::vec3(geom.invTranspose * glm::vec4(n, 0.0f)));
+            cout << "  " << positions.size() / 3 << " vertices, " << indices.size() / 3 << " triangles" << endl;
 
-            tri.vertices[k] = p;
-            tri.normals[k] = n;
-            tri.uvs[k] = uv;
-            aabbMin = glm::min(aabbMin, p);
-            aabbMax = glm::max(aabbMax, p);
+            // 4. Assemble triangles in WORLD space so intersection and AABB/BVH need no inverse transform
+            for (size_t t = 0; t + 2 < indices.size(); t += 3)
+            {
+                Triangle tri;
+                for (int k = 0; k < 3; k++)
+                {
+                    int vi = indices[t + k];
+
+                    // pull vertex vi out of the flat arrays
+                    glm::vec3 p(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
+                    glm::vec3 n(normals[vi * 3], normals[vi * 3 + 1], normals[vi * 3 + 2]);
+                    glm::vec2 uv(0.0f);
+                    if (!uvs.empty())  uv = glm::vec2(uvs[vi * 2], uvs[vi * 2 + 1]);
+
+                    // w = 1 for a point, w = 0 for a direction; normals use the inverse transpose
+                    p = glm::vec3(geom.transform * glm::vec4(p, 1.0f));
+                    n = glm::normalize(glm::vec3(geom.invTranspose * glm::vec4(n, 0.0f)));
+
+                    tri.vertices[k] = p;
+                    tri.normals[k] = n;
+                    tri.uvs[k] = uv;
+                    aabbMin = glm::min(aabbMin, p);
+                    aabbMax = glm::max(aabbMax, p);
+                }
+                triangles.push_back(tri);
+            }
         }
-        triangles.push_back(tri);
     }
     geom.triCount = (int)triangles.size() - geom.triStart;
     geom.aabbMin = aabbMin;
     geom.aabbMax = aabbMax;
 
     int nodesBefore = (int)bvhNodes.size();
-    geom.bvhRoot = buildBVH(geom.triStart, geom.triCount);
+    geom.bvhRoot = buildBVH(geom.triStart, geom.triCount, 0);
     cout << "  " << bvhNodes.size() - nodesBefore << " BVH nodes" << endl;
 }
 
@@ -449,6 +460,9 @@ void Scene::loadFromJSON(const std::string& jsonName)
     camera.position = glm::vec3(pos[0], pos[1], pos[2]);
     camera.lookAt = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
+    // thin lens; both are optional and a scene without them renders as before
+    camera.lensRadius = cameraData.value("LENS_RADIUS", 0.0f);
+    camera.focalDistance = cameraData.value("FOCAL_DISTANCE", glm::length(camera.lookAt - camera.position));
 
     //calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));

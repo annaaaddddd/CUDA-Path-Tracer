@@ -85,6 +85,8 @@ struct Camera
     glm::vec3 right;
     glm::vec2 fov;
     glm::vec2 pixelLength;
+    float lensRadius;      // 0 keeps the pinhole camera, where everything is sharp
+    float focalDistance;   // distance along the view direction to the plane that stays sharp
 };
 
 struct RenderState

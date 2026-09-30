@@ -36,6 +36,9 @@
 // Skip a mesh's triangle loop when the ray misses its bounding box
 #define MESH_AABB_CULL 1
 
+// Thin lens camera: rays start on a disk instead of a point, so only one distance is sharp
+#define DEPTH_OF_FIELD 1
+
 // Walk each mesh's bounding volume hierarchy instead of testing all its triangles
 #define BVH 1
 // most nodes that can wait to be visited at once; a balanced tree over a million triangles needs about 20
@@ -229,6 +232,31 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
             - cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f)
             - cam.up * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f)
         );
+#endif
+
+#if DEPTH_OF_FIELD
+        if (cam.lensRadius > 0.0f)
+        {
+            // seeded apart from the antialiasing jitter so the two do not move together
+            thrust::default_random_engine lensRng = makeSeededRandomEngine(iter, index, traceDepth + 1);
+            thrust::uniform_real_distribution<float> lens01(0, 1);
+
+            // the point this pixel sees on the plane of focus
+            // the plane sits focalDistance away measured along cam.view, not along the ray,
+            // so a ray toward the edge of the image travels farther to reach it
+            float t = cam.focalDistance / glm::dot(segment.ray.direction, cam.view);
+            glm::vec3 focusPoint = segment.ray.origin + t * segment.ray.direction;
+
+            // uniform random point on the lens; the square root spreads the samples evenly,
+            // a radius taken straight from the random number crowds them in the middle
+            float r = cam.lensRadius * glm::sqrt(lens01(lensRng));
+            float angle = 2.0f * PI * lens01(lensRng);
+            glm::vec2 lens(r * glm::cos(angle), r * glm::sin(angle));
+
+            // start from that point on the lens and aim at the same focus point
+            segment.ray.origin += cam.right * lens.x + cam.up * lens.y;
+            segment.ray.direction = glm::normalize(focusPoint - segment.ray.origin);
+        }
 #endif
 
         segment.pixelIndex = index;
