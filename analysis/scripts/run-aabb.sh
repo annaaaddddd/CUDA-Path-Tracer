@@ -25,6 +25,8 @@ mkdir -p analysis/logs
 echo "model,triangles,aabb_cull,ms_per_iter,fps" > analysis/data/aabb-timing.csv
 
 sed -i -E "s/\"ITERATIONS\": *[0-9]+/\"ITERATIONS\":$ITERS/" "$SCENE"
+# the BVH root test makes the per-mesh box redundant, so it is off for this comparison
+sed -i -E "s/^(#define BVH) +[0-9]+/\1 0/" "$SRC"
 for m in "${MODELS[@]}"; do
     sed -i -E "s|\"FILE\":\"\.\./models/[^\"]+\.gltf\"|\"FILE\":\"../models/$m.gltf\"|" "$SCENE"
     for c in 1 0; do

@@ -342,7 +342,6 @@ void Scene::loadFromJSON(const std::string& jsonName)
         const auto& p = item.value();
         Material newMaterial{};
         newMaterial.albedoTex = -1;
-        // TODO: handle materials loading differently
         if (p["TYPE"] == "Diffuse")
         {
             const auto& col = p["RGB"];
