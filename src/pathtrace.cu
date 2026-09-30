@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <cuda.h>
 #include <cmath>
-#include <chrono>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
@@ -17,15 +16,12 @@
 #include "utilities.h"
 #include "intersections.h"
 #include "interactions.h"
+#include "perf.h"
 
 #define ERRORCHECK 1
 
 // Toggle stream compaction of terminated paths (for performance comparison)
 #define STREAM_COMPACTION 1
-
-// Log perf stats to console: paths alive per bounce (first iteration only)
-// and average ms/iteration + FPS every 100 iterations
-#define PERF_LOG 1
 
 // Sort paths by material before starting shading
 #define SORT_BY_MATERIAL 1
@@ -652,6 +648,7 @@ struct material_id_less
  * Wrapper for the __global__ call that sets up the kernel calls and does a ton
  * of memory management
  */
+
 void pathtrace(uchar4* pbo, int frame, int iter)
 {
     const int traceDepth = hst_scene->state.traceDepth;
@@ -669,11 +666,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     ///////////////////////////////////////////////////////////////////////////
 
-#if PERF_LOG
-    static double perfAccumMs = 0.0;
-    static int perfFrameCount = 0;
-    const auto perfStart = std::chrono::high_resolution_clock::now();
-#endif
+    perfBegin();
+    perfMark(PERF_GENERATE);
 
     generateRayFromCamera<<<blocksPerGrid2d, blockSize2d>>>(cam, iter, traceDepth, dev_paths);
     checkCUDAError("generate camera ray");
@@ -693,6 +687,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
         // tracing
         dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
+        perfMark(PERF_INTERSECT);
         computeIntersections<<<numblocksPathSegmentTracing, blockSize1d>>> (
             depth,
             num_paths,
@@ -713,9 +708,11 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         // evaluating the BSDF.
 
 #if SORT_BY_MATERIAL
+        perfMark(PERF_SORT);
         thrust::sort_by_key(thrust::device, dev_intersections, dev_intersections + num_paths, dev_paths, material_id_less());
 #endif
 
+        perfMark(PERF_SHADE);
         shadeMaterial<<<numblocksPathSegmentTracing, blockSize1d>>>(
             iter,
             num_paths,
@@ -730,16 +727,12 @@ void pathtrace(uchar4* pbo, int frame, int iter)
         );
 
 #if STREAM_COMPACTION
+        perfMark(PERF_COMPACT);
         PathSegment* streamCompactPartition = thrust::partition(thrust::device, dev_paths, dev_paths + num_paths, is_path_alive());
         num_paths = streamCompactPartition - dev_paths;
 #endif
 
-#if PERF_LOG
-        if (iter == 1)
-        {
-            printf("[perf] bounce %d: %d paths alive\n", depth, num_paths);
-        }
-#endif
+        perfPathsAlive(iter, depth, num_paths);
 
         iterationComplete = (depth == traceDepth) || (num_paths == 0);
 
@@ -752,30 +745,21 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
     // Assemble this iteration and apply it to the image
     dim3 numBlocksPixels = (pixelcount + blockSize1d - 1) / blockSize1d;
+    perfMark(PERF_GATHER);
     finalGather<<<numBlocksPixels, blockSize1d>>>(pixelcount, dev_image, dev_paths);
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Send results to OpenGL buffer for rendering
+    perfMark(PERF_STAGES);
     sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
 
     // Retrieve image from GPU
     cudaMemcpy(hst_scene->state.image.data(), dev_image,
         pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
-#if PERF_LOG
-    // The cudaMemcpy above synchronizes the device, so host timing covers all GPU work.
-    const auto perfEnd = std::chrono::high_resolution_clock::now();
-    perfAccumMs += std::chrono::duration<double, std::milli>(perfEnd - perfStart).count();
-    perfFrameCount++;
-    if (perfFrameCount == 100)
-    {
-        printf("[perf] iter %d: avg %.2f ms/iteration (%.1f FPS) over last 100 iterations\n",
-            iter, perfAccumMs / perfFrameCount, 1000.0 * perfFrameCount / perfAccumMs);
-        perfAccumMs = 0.0;
-        perfFrameCount = 0;
-    }
-#endif
+    // the cudaMemcpy above waited for the GPU, so every stage has finished
+    perfEnd(iter);
 
     checkCUDAError("pathtrace");
 }
