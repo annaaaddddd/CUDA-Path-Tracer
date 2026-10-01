@@ -1,4 +1,4 @@
-"""Plots analysis/data/paths.csv as img/paths_alive_per_bounce.png."""
+"""Plots analysis/data/toggles-paths.csv (sorting on, AA on) as img/paths_alive_per_bounce.png."""
 import csv
 import collections
 import matplotlib
@@ -13,9 +13,10 @@ OPEN_C = "#2a78d6"
 CLOSED_C = "#eb6834"
 
 series = collections.defaultdict(dict)
-with open("analysis/data/paths.csv") as f:
+with open("analysis/data/toggles-paths.csv") as f:
     for row in csv.DictReader(f):
-        series[(row["scene"], row["compaction"])][int(row["bounce"])] = int(row["paths_alive"])
+        if row["sort"] == "1" and row["aa"] == "1":
+            series[(row["scene"], row["compaction"])][int(row["bounce"])] = int(row["paths_alive"])
 
 BORN = 640_000
 bounces = list(range(0, 8))
@@ -26,8 +27,8 @@ def curve(scene):
     return [BORN] + [d[b] for b in range(1, 8)]
 
 
-open_y = curve("cornell")
-closed_y = curve("cornell_closed")
+open_y = curve("open")
+closed_y = curve("closed")
 
 fig, ax = plt.subplots(figsize=(8.0, 4.6), dpi=200)
 fig.patch.set_facecolor(SURFACE)
@@ -41,9 +42,9 @@ for y, color in ((closed_y, CLOSED_C), (open_y, OPEN_C)):
     ax.plot(bounces, y, color=color, lw=2, marker="o", ms=5,
             mec=SURFACE, mew=1.5, zorder=3, solid_capstyle="round")
 
-ax.text(7.25, closed_y[-1], "closed box" + chr(10) + "551k alive, 86%", color=INK,
+ax.text(7.25, closed_y[-1], "closed box" + chr(10) + f"{closed_y[-1] // 1000}k alive, {round(100 * closed_y[-1] / BORN)}%", color=INK,
         fontsize=10, ha="left", va="center", linespacing=1.4)
-ax.text(7.25, open_y[-1], "open box" + chr(10) + "120k alive, 19%", color=INK,
+ax.text(7.25, open_y[-1], "open box" + chr(10) + f"{open_y[-1] // 1000}k alive, {round(100 * open_y[-1] / BORN)}%", color=INK,
         fontsize=10, ha="left", va="center", linespacing=1.4)
 
 ax.set_xlim(-0.3, 9.75)
