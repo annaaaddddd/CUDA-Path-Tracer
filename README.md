@@ -10,13 +10,15 @@ A physically-based path tracer that runs entirely on the GPU.
 
 <p align="center"><img src="img/kitchen_final.png" width="560"></p>
 
-<p align="center"><em>A kitchen sink in afternoon light: eight glTF models, 50 000 triangles, image and procedural textures, bump-mapped grout, brushed steel, glass, and a thin-lens camera focused on the cutting board.</em></p>
+<p align="center"><em>A kitchen sink in afternoon light. 800x800, 4000 samples per pixel, trace depth 16, about 205 ms per iteration.</em></p>
 
-<p align="center"><em>800x800, 4000 samples per pixel, trace depth 16, about 205 ms per iteration.</em></p>
 
 ## Overview
 
 The renderer parallelizes over path segments, not over pixels. Each kernel launch advances every live path by exactly one bounce, and the depth loop lives on the host. Path state sits in device-memory arrays between launches, which makes it possible to compact dead paths away and to reorder live ones by material before shading.
+
+<p align="center"><img src="img/kitchen_final_annotated.png" width="800"></p>
+<p align="center"><em>The same render with the features marked. The sink uses a Phong exponent of 200 and the glass an IOR of 1.5.</em></p>
 
 ### Highlights
 
@@ -749,7 +751,7 @@ The final image was built up in steps, each one a render that could be checked b
 | <img src="img/kitchen_v0_gray.png" width="350"> | <img src="img/kitchen_v1_materials.png" width="320"> | <img src="img/kitchen_v1_marble.png" width="370"> | ![](img/kitchen_final.png) |
 
 - The room is primitives: a counter cut into four boxes around the sink so the basin has somewhere to go, a tiled backsplash with the procedural tiles and bump mapping, and two emissive panels standing in for windows
-- Eight models, 50 000 triangles in all: the sink with its faucet, the glass, the cutting board, the lemon, the spoon, the bottle and two potted plants
+- Eight models, 50,303 triangles in all: the sink with its faucet, the glass, the cutting board, the lemon, the spoon, the bottle and two potted plants
 - Scene units are 10 cm, so a model in meters takes `SCALE 10`
 - Trace depth is 16, because a ray through the glass crosses four surfaces before it sees anything, and at depth 8 the glass rendered as a gray lump
 
