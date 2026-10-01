@@ -1,7 +1,7 @@
 scene,bump,ms_per_iter,fps
-tiles_procedural,flat,45.59,21.9
-tiles_procedural,flat,45.77,21.8
-tiles_procedural,flat,48.94,20.4
-tiles_bump,bump,47.23,21.2
-tiles_bump,bump,46.98,21.3
-tiles_bump,bump,45.59,21.9
+tiles_procedural,flat,44.00,22.7
+tiles_procedural,flat,44.64,22.4
+tiles_procedural,flat,43.72,22.9
+tiles_bump,bump,43.38,23.1
+tiles_bump,bump,43.99,22.7
+tiles_bump,bump,43.14,23.2
