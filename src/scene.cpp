@@ -142,11 +142,10 @@ static std::vector<int> gltfReadIndices(
     return out;
 }
 
-// A node with this many triangles or fewer becomes a leaf
-static const int bvhLeafSize = 4;
-// Splitting stops at this depth even when a node still holds more than bvhLeafSize,
-// the root being depth 0. Must stay below BVH_STACK_SIZE in pathtrace.cu
-static const int bvhMaxDepth = 24;
+// Deepest split the traversal stack can follow
+// An interior node at depth k leaves k pending siblings on the stack and pushes two more,
+// which needs k + 2 <= BVH_STACK_SIZE (32 in pathtrace.cu), and interior nodes sit above bvhMaxDepth
+static const int bvhDepthCeiling = 31;
 
 static glm::vec3 triangleCentroid(const Triangle& tri)
 {
@@ -334,6 +333,17 @@ void Scene::loadFromJSON(const std::string& jsonName)
     json data = json::parse(f);
     // paths inside the scene file are relative to the scene file
     std::string sceneDir = jsonName.substr(0, jsonName.find_last_of("/\\") + 1);
+
+    // optional BVH build settings, read before any mesh is loaded because the tree is built then
+    if (data.contains("BVH"))
+    {
+        bvhLeafSize = data["BVH"].value("LEAF_SIZE", bvhLeafSize);
+        bvhMaxDepth = data["BVH"].value("MAX_DEPTH", bvhMaxDepth);
+    }
+    bvhLeafSize = glm::max(bvhLeafSize, 1);
+    bvhMaxDepth = glm::clamp(bvhMaxDepth, 0, bvhDepthCeiling);
+    cout << "BVH leaf size " << bvhLeafSize << ", depth limit " << bvhMaxDepth << endl;
+
     const auto& materialsData = data["Materials"];
     std::unordered_map<std::string, uint32_t> MatNameToID;
     for (const auto& item : materialsData.items())
