@@ -3,7 +3,7 @@ CUDA Path Tracer
 
 **University of Pennsylvania, CIS 5650: GPU Programming and Architecture, Project 3**
 
-* Anna Dai
+* Anna Dai [LinkedIn](www.linkedin.com/in/nanru-dai-8b33a9261) [Personal website](https://annaaaddddd.github.io/)
 * Tested on: Windows 11 Home, AMD Ryzen 9 5950X @ 3.40GHz 128GB, NVIDIA GeForce RTX 3090 Ti 24GB, personal machine
 
 A physically-based path tracer that runs entirely on the GPU.
